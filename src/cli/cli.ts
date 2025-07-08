@@ -8,6 +8,7 @@ import { getDbPath } from './utils/db-config.js';
 import { renderAddFact } from './commands/add.js';
 import { renderSearch } from './commands/search.js';
 import { renderList } from './commands/list.js';
+import { renderProjectInfo } from './commands/project.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -111,31 +112,33 @@ export function createCLI(): Command {
     .description('Show current project information')
     .action(async () => {
       try {
-        const dbPath = getDbPath();
-        const db = new Database(dbPath);
-        const projectInfo = await getProjectInfo(process.cwd());
-        
-        const project = db.findProjectByPath(projectInfo.path);
-        
-        if (project) {
-          console.log(`\nProject: ${project.name}`);
-          console.log(`Path: ${project.path}`);
-          console.log(`Type: ${project.isMonorepo ? 'Monorepo' : 'Standard'}`);
-          if (project.services.length > 0) {
-            console.log(`Services: ${project.services.join(', ')}`);
-          }
-          if (project.gitRemote) {
-            console.log(`Git: ${project.gitRemote}`);
-          }
-          console.log(`Created: ${project.createdAt.toLocaleDateString()}`);
-          console.log(`Last seen: ${project.lastSeen.toLocaleDateString()}`);
+        if (!process.stdin.isTTY) {
+          // Non-interactive mode
+          const dbPath = getDbPath();
+          const db = new Database(dbPath);
+          const projectInfo = await getProjectInfo(process.cwd());
           
-          const facts = db.listFactsByProject(project.id);
-          console.log(`\nFacts: ${facts.length}`);
+          const project = db.findProjectByPath(projectInfo.path);
           
-          const factsByType = facts.reduce((acc, fact) => {
-            acc[fact.type] = (acc[fact.type] || 0) + 1;
-            return acc;
+          if (project) {
+            console.log(`\nProject: ${project.name}`);
+            console.log(`Path: ${project.path}`);
+            console.log(`Type: ${project.isMonorepo ? 'Monorepo' : 'Standard'}`);
+            if (project.services.length > 0) {
+              console.log(`Services: ${project.services.join(', ')}`);
+            }
+            if (project.gitRemote) {
+              console.log(`Git: ${project.gitRemote}`);
+            }
+            console.log(`Created: ${project.createdAt.toLocaleDateString()}`);
+            console.log(`Last seen: ${project.lastSeen.toLocaleDateString()}`);
+            
+            const facts = db.listFactsByProject(project.id);
+            console.log(`\nFacts: ${facts.length}`);
+            
+            const factsByType = facts.reduce((acc, fact) => {
+              acc[fact.type] = (acc[fact.type] || 0) + 1;
+              return acc;
           }, {} as Record<string, number>);
           
           Object.entries(factsByType).forEach(([type, count]) => {
@@ -147,6 +150,10 @@ export function createCLI(): Command {
         }
         
         db.close();
+      } else {
+        // Interactive mode with Ink
+        await renderProjectInfo();
+      }
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
         process.exit(1);
