@@ -18,11 +18,15 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "bench": "vitest bench",
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/post-build.js",
     "dev": "tsc -w",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist coverage .turbo"
+    "clean": "rm -rf dist coverage .turbo",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "keywords": [
     "mcp",
@@ -49,6 +53,8 @@
     "@modelcontextprotocol/sdk": "^1.15.0",
     "better-sqlite3": "^12.2.0",
     "commander": "^14.0.0",
+    "drizzle-kit": "^0.31.4",
+    "drizzle-orm": "^0.44.2",
     "ink": "^6.0.1",
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",

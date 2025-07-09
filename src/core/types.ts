@@ -12,7 +12,7 @@ export const FactTypeSchema = z.enum([
   'other'
 ]);
 
-export const FactStatusSchema = z.enum(['active', 'superseded', 'deprecated']);
+export const FactStatusSchema = z.enum(['active', 'superseded', 'deprecated', 'archived']);
 
 export const SourceTypeSchema = z.enum(['manual', 'inferred', 'imported']);
 

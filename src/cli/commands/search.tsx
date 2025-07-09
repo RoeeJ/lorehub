@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { Database } from '../../db/database.js';
-import { SearchFacts } from '../components/SearchFacts.js';
+import { FactsView } from '../components/FactsView.js';
 import { getDbPath } from '../utils/db-config.js';
 
 interface SearchOptions {
@@ -103,10 +103,10 @@ export async function renderSearch(options: SearchOptions): Promise<void> {
   
   // Interactive mode with Ink
   const { waitUntilExit } = render(
-    <SearchFacts
+    <FactsView
       db={db}
       projectPath={process.cwd()}
-      query={options.query}
+      initialQuery={options.query}
       type={options.type}
       service={options.service}
       filterProjectPath={options.projectPath}

@@ -2,28 +2,34 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
+import { Help } from './Help.js';
+import { ConfirmDialog } from './ConfirmDialog.js';
 import type { Database } from '../../db/database.js';
-import type { Fact, Project } from '../../core/types.js';
+import type { Fact, FactType } from '../../core/types.js';
 
-interface SearchFactsProps {
+interface FactsViewProps {
   db: Database;
   projectPath: string;
-  query: string;
+  // Search-specific props
+  initialQuery?: string;
+  // Filter props
   type?: string;
   service?: string;
+  limit?: number;
   filterProjectPath?: string;
   currentProjectOnly?: boolean;
 }
 
-export function SearchFacts({
+export function FactsView({
   db,
   projectPath,
-  query,
+  initialQuery = '',
   type,
   service,
+  limit = 100,
   filterProjectPath,
   currentProjectOnly,
-}: SearchFactsProps) {
+}: FactsViewProps) {
   const { exit } = useApp();
   const [facts, setFacts] = useState<Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
   const [loading, setLoading] = useState(true);
@@ -31,8 +37,23 @@ export function SearchFacts({
   const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredFacts, setFilteredFacts] = useState<Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   useInput((input, key) => {
+    if (showHelp) {
+      if (input === '?' || key.escape) {
+        setShowHelp(false);
+      }
+      return;
+    }
+
+    if (showDeleteConfirm) {
+      // Let ConfirmDialog handle input
+      return;
+    }
+
     if (isSearching) {
       if (key.escape) {
         setIsSearching(false);
@@ -55,6 +76,10 @@ export function SearchFacts({
       } else if (input === '/') {
         setIsSearching(true);
         setSearchTerm('');
+      } else if (input === '?') {
+        setShowHelp(true);
+      } else if (input === 'd' && filteredFacts.length > 0) {
+        setShowDeleteConfirm(true);
       }
     }
   });
@@ -103,9 +128,21 @@ export function SearchFacts({
 
     let results: Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }> = [];
     
-    // Search selected projects
+    // Get facts from selected projects
     for (const proj of projectsToSearch) {
-      const projectFacts = db.searchFacts(proj.id, query);
+      let projectFacts: Fact[] = [];
+      
+      if (initialQuery) {
+        // Search mode
+        projectFacts = db.searchFacts(proj.id, initialQuery);
+      } else if (type) {
+        projectFacts = db.listFactsByType(proj.id, type as FactType);
+      } else if (service) {
+        projectFacts = db.listFactsByService(proj.id, service);
+      } else {
+        projectFacts = db.listFactsByProject(proj.id);
+      }
+      
       // Add project info to each fact
       results.push(...projectFacts.map(f => ({
         ...f,
@@ -115,14 +152,17 @@ export function SearchFacts({
       })));
     }
 
-    // Apply filters
-    if (type) {
+    // Apply additional filters
+    if (initialQuery && type) {
       results = results.filter(f => f.type === type);
     }
     
-    if (service) {
+    if (initialQuery && service) {
       results = results.filter(f => f.services.includes(service));
     }
+
+    // Filter out archived facts unless specifically requested
+    results = results.filter(f => f.status !== 'archived');
 
     // Sort by current project first, then by date
     results.sort((a, b) => {
@@ -133,21 +173,35 @@ export function SearchFacts({
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
     
+    // Apply limit
+    if (results.length > limit) {
+      results = results.slice(0, limit);
+    }
+    
     setFacts(results);
     setFilteredFacts(results);
     setLoading(false);
-  }, [db, projectPath, query, type, service, filterProjectPath, currentProjectOnly]);
+  }, [db, projectPath, initialQuery, type, service, limit, filterProjectPath, currentProjectOnly]);
 
   if (loading) {
-    return <Text>Searching...</Text>;
+    return <Text>Loading facts...</Text>;
   }
 
   if (facts.length === 0) {
     return (
       <Box flexDirection="column">
-        <Text color="yellow">No facts found matching "{query}"</Text>
+        <Text color="yellow">
+          {initialQuery 
+            ? `No facts found matching "${initialQuery}"`
+            : 'No facts found'}
+        </Text>
         {type && <Text dimColor>Filter: type = {type}</Text>}
         {service && <Text dimColor>Filter: service = {service}</Text>}
+        {!initialQuery && (
+          <Box marginTop={1}>
+            <Text dimColor>Try adding facts with: lh add "Your fact here"</Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -171,15 +225,59 @@ export function SearchFacts({
     setSelectedIndex(item.value);
   };
 
+  const handleDelete = () => {
+    const factToDelete = filteredFacts[selectedIndex];
+    if (factToDelete) {
+      db.softDeleteFact(factToDelete.id);
+      // Remove from local state
+      const newFacts = facts.filter(f => f.id !== factToDelete.id);
+      const newFilteredFacts = filteredFacts.filter(f => f.id !== factToDelete.id);
+      setFacts(newFacts);
+      setFilteredFacts(newFilteredFacts);
+      setShowDeleteConfirm(false);
+      setDeleteSuccess(true);
+      
+      // Reset success message after 2 seconds
+      setTimeout(() => setDeleteSuccess(false), 2000);
+      
+      // Adjust selected index if needed
+      if (selectedIndex >= newFilteredFacts.length && selectedIndex > 0) {
+        setSelectedIndex(selectedIndex - 1);
+      }
+    }
+  };
+
+  // Show help screen if requested
+  if (showHelp) {
+    return <Help context={initialQuery ? 'search' : 'list'} />;
+  }
+
+  // Show confirmation dialog instead of normal view
+  if (showDeleteConfirm && selectedFact) {
+    return (
+      <Box flexDirection="column" height={20} justifyContent="center" alignItems="center">
+        <ConfirmDialog
+          message={`Delete fact: "${selectedFact.content.substring(0, 50)}${selectedFact.content.length > 50 ? '...' : ''}"?`}
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
+          dangerous={true}
+        />
+      </Box>
+    );
+  }
+
   // Fixed height container
   return (
     <Box flexDirection="column" height={20}>
       {/* Header - fixed height */}
       <Box height={3} flexDirection="column">
         <Text bold>
-          Found {filteredFacts.length} fact{filteredFacts.length !== 1 ? 's' : ''} matching "{query}"
+          {initialQuery
+            ? `Found ${filteredFacts.length} fact${filteredFacts.length !== 1 ? 's' : ''} matching "${initialQuery}"`
+            : `Found ${filteredFacts.length} fact${filteredFacts.length !== 1 ? 's' : ''}`}
           {searchTerm && ` (filtered: "${searchTerm}")`}
         </Text>
+        {deleteSuccess && <Text color="green">✓ Fact deleted (archived)</Text>}
         {(type || service) && (
           <Text dimColor>Filters: {[
             type && `type=${type}`,
@@ -196,9 +294,9 @@ export function SearchFacts({
 
       {/* Main content area - fixed height */}
       <Box flexDirection="row" height={15}>
-        {/* Left pane - results list */}
+        {/* Left pane - fact list */}
         <Box flexDirection="column" width="50%" marginRight={2}>
-          <Text bold dimColor>Results</Text>
+          <Text bold dimColor>{initialQuery ? 'Results' : 'Facts'}</Text>
           <Box marginTop={1}>
             <SelectInput
               items={items}
@@ -254,7 +352,7 @@ export function SearchFacts({
         <Text dimColor>
           {isSearching 
             ? 'Type to filter | Enter: confirm | Esc: cancel' 
-            : 'q: quit | ↑↓: navigate | /: filter results'}
+            : 'q: quit | ↑↓: navigate | /: filter | d: delete | ?: help'}
         </Text>
       </Box>
     </Box>

@@ -16,11 +16,13 @@ LoreHub remembers so you don't have to.
 ## Features
 
 - 🧠 **Smart Capture**: Automatically detects and captures decisions from git commits and LLM conversations
-- 🔍 **Natural Language Search**: Ask questions in plain English
+- 🔍 **Natural Language Search**: Ask questions in plain English with vim-style filtering
 - 🏗️ **Monorepo Aware**: Track decisions across 70+ microservices in a single repository
 - 🔗 **Relationship Tracking**: Understand how decisions evolve over time
 - ⚡ **Local First**: Everything runs on your machine, no external dependencies
 - 🤖 **LLM Integration**: Works seamlessly with Claude and other MCP-compatible tools
+- 📊 **Grid Layout UI**: Consistent, fixed-height terminal UI with keyboard shortcuts
+- 💾 **Export/Import**: Backup and share your knowledge base in JSON or Markdown
 
 ## Quick Start
 
@@ -33,14 +35,18 @@ npm install -g lorehub
 ### Basic Usage
 
 ```bash
+# Launch interactive facts view (default)
+lh
+
 # Add a fact interactively
 lh add
 
 # Add a fact inline
 lh add "Decided to use JWT tokens with 1hr expiry for stateless auth"
 
-# List all facts
-lh list
+# List facts with filters
+lh list --type decision
+lh list --current  # Only from current project
 
 # Search for facts
 lh search "auth*"
@@ -153,10 +159,17 @@ lh search "database*"             # Search with wildcards
 lh search "auth" --type=decision  # Filter by type
 lh list                           # Interactive list view
 lh list --limit=10                # Show last 10 facts
+lh list --current                 # Only from current project
 
 # Project Management
 lh project                        # Show current project info
-lh project init                   # Initialize project
+
+# Export & Import
+lh export facts.json              # Export all facts as JSON
+lh export facts.md --format markdown  # Export as Markdown
+lh export project.json -p /path   # Export specific project only
+lh import facts.json              # Import (replaces existing)
+lh import facts.json --merge      # Merge with existing data
 ```
 
 ## Configuration
@@ -183,9 +196,11 @@ LoreHub is in active development. Current focus:
 - [x] Interactive CLI with Ink UI
 - [x] MCP server implementation
 - [x] Wildcard search support
+- [x] Export/import functionality
+- [x] Grid-based UI with keyboard shortcuts
 - [ ] Git integration
 - [ ] Fact relationships
-- [ ] Export/import functionality
+- [ ] Time-based queries
 
 ## Contributing
 

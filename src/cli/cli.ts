@@ -9,6 +9,8 @@ import { renderAddFact } from './commands/add.js';
 import { renderSearch } from './commands/search.js';
 import { renderList } from './commands/list.js';
 import { renderProjectInfo } from './commands/project.js';
+import { renderExport } from './commands/export.js';
+import { renderImport } from './commands/import.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -160,10 +162,55 @@ export function createCLI(): Command {
       }
     });
 
+  // Export command
+  program
+    .command('export <output>')
+    .description('Export facts to a file')
+    .option('-p, --project <path>', 'Export facts from specific project only')
+    .option('-f, --format <format>', 'Output format (json, markdown)', 'json')
+    .action(async (output: string, options) => {
+      try {
+        await renderExport({
+          projectPath: options.project,
+          outputFile: output,
+          format: options.format,
+        });
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
+        process.exit(1);
+      }
+    });
+
+  // Import command
+  program
+    .command('import <input>')
+    .description('Import facts from a file')
+    .option('-m, --merge', 'Merge with existing data (default: replace)')
+    .action(async (input: string, options) => {
+      try {
+        await renderImport({
+          inputFile: input,
+          merge: options.merge || false,
+        });
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
+        process.exit(1);
+      }
+    });
+
   return program;
 }
 
-export function run(argv?: string[]): void {
+export async function run(argv?: string[]): Promise<void> {
   const program = createCLI();
-  program.parse(argv);
+  const args = argv || process.argv;
+  
+  // If no arguments provided, default to list command
+  if (args.length === 2) {
+    // argv is like ['node', 'script.js'] when no args
+    await renderList({ limit: 20 });
+    return;
+  }
+  
+  program.parse(args);
 }

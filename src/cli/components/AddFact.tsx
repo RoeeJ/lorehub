@@ -18,17 +18,29 @@ interface AddFactProps {
   onComplete?: (success: boolean) => void;
 }
 
-type FormField = 'content' | 'type' | 'why' | 'services' | 'tags' | 'confidence' | 'submit';
+type FormField = 'content' | 'type' | 'why' | 'services' | 'tags' | 'confidence';
 
 const factTypes: Array<{ label: string; value: FactType }> = [
-  { label: 'Decision - Architectural or technical choice', value: 'decision' },
-  { label: 'Learning - Something discovered', value: 'learning' },
-  { label: 'Assumption - Unverified belief', value: 'assumption' },
-  { label: 'Constraint - Limitation or requirement', value: 'constraint' },
-  { label: 'Risk - Potential problem', value: 'risk' },
-  { label: 'Todo - Future action needed', value: 'todo' },
-  { label: 'Other - Miscellaneous', value: 'other' },
+  { label: 'Decision', value: 'decision' },
+  { label: 'Learning', value: 'learning' },
+  { label: 'Assumption', value: 'assumption' },
+  { label: 'Constraint', value: 'constraint' },
+  { label: 'Requirement', value: 'requirement' },
+  { label: 'Risk', value: 'risk' },
+  { label: 'Todo', value: 'todo' },
+  { label: 'Other', value: 'other' },
 ];
+
+const typeDescriptions: Record<FactType, string> = {
+  decision: 'Architectural or technical choice',
+  learning: 'Something discovered or learned',
+  assumption: 'Unverified belief or hypothesis',
+  constraint: 'Limitation or requirement',
+  requirement: 'Business or technical requirement',
+  risk: 'Potential problem or concern',
+  todo: 'Future action needed',
+  other: 'Miscellaneous fact',
+};
 
 export function AddFact({
   db,
@@ -46,6 +58,8 @@ export function AddFact({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Form state
   const [currentField, setCurrentField] = useState<FormField>('content');
@@ -87,11 +101,18 @@ export function AddFact({
   }, [db, projectPath]);
 
   const handleSubmit = async () => {
+    if (isSubmitting || success) {
+      return; // Prevent duplicate submissions
+    }
+    
     if (!project || !content.trim()) {
       setError('Content is required');
+      setTimeout(() => setError(null), 3000);
       return;
     }
 
+    setIsSubmitting(true);
+    
     try {
       const factInput: CreateFactInput = {
         projectId: project.id,
@@ -108,7 +129,7 @@ export function AddFact({
         },
       };
 
-      await db.createFact(factInput);
+      const fact = await db.createFact(factInput);
       setSuccess(true);
       
       setTimeout(() => {
@@ -117,16 +138,36 @@ export function AddFact({
       }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create fact');
+      setTimeout(() => setError(null), 3000);
+      setIsSubmitting(false);
     }
   };
 
   // Handle keyboard input
-  useInput((_input, key) => {
-    if (key.tab && !key.shift) {
+  useInput((input, key) => {
+    // Ignore all input during submission or after success
+    if (isSubmitting || success) {
+      return;
+    }
+    
+    if (showHelp) {
+      if (input === '?' || key.escape) {
+        setShowHelp(false);
+      }
+      return;
+    }
+
+    // Check if we're in a text input field
+    const isTextInputField = currentField === 'content' || currentField === 'why' || 
+                           currentField === 'services' || currentField === 'tags';
+
+    if (input === '?' && !isTextInputField) {
+      setShowHelp(true);
+    } else if (key.tab && !key.shift) {
       // Tab navigation (forward)
       const fields: FormField[] = ['content', 'type', 'why'];
       if (project?.isMonorepo) fields.push('services');
-      fields.push('tags', 'confidence', 'submit');
+      fields.push('tags', 'confidence');
       
       const currentIndex = fields.indexOf(currentField);
       const nextIndex = (currentIndex + 1) % fields.length;
@@ -135,15 +176,13 @@ export function AddFact({
       // Shift-Tab navigation (backward)
       const fields: FormField[] = ['content', 'type', 'why'];
       if (project?.isMonorepo) fields.push('services');
-      fields.push('tags', 'confidence', 'submit');
+      fields.push('tags', 'confidence');
       
       const currentIndex = fields.indexOf(currentField);
       const prevIndex = currentIndex === 0 ? fields.length - 1 : currentIndex - 1;
       setCurrentField(fields[prevIndex] as FormField);
-    } else if (key.return) {
-      if (currentField === 'submit' || (currentField === 'content' && content.trim())) {
-        handleSubmit();
-      }
+    } else if (key.return && !key.shift) {
+      handleSubmit();
     } else if (key.escape) {
       onComplete?.(false);
       exit();
@@ -158,141 +197,161 @@ export function AddFact({
 
   // Handle loading and error states
   if (loading) {
-    return <Text>Loading project information...</Text>;
-  }
-
-  if (error && !success) {
-    return <Text color="red">Error: {error}</Text>;
-  }
-
-  if (success) {
     return (
-      <Box flexDirection="column">
-        <Text color="green">✓ Fact created successfully!</Text>
-        <Text dimColor>ID: {project?.id}</Text>
+      <Box flexDirection="column" alignItems="center" justifyContent="center" height={20}>
+        <Text>Loading project information...</Text>
       </Box>
     );
   }
 
-  // Render form
+  if (success) {
+    return (
+      <Box flexDirection="column" alignItems="center" justifyContent="center" height={20}>
+        <Text color="green" bold>✓ Fact created successfully!</Text>
+        <Box marginTop={1}>
+          <Text dimColor>Returning to shell...</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (showHelp) {
+    return (
+      <Box flexDirection="column" height={20} padding={1}>
+        <Text bold underline>Keyboard Shortcuts</Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text><Text color="cyan">Tab</Text> - Next field</Text>
+          <Text><Text color="cyan">Shift+Tab</Text> - Previous field</Text>
+          <Text><Text color="cyan">Enter</Text> - Save fact</Text>
+          <Text><Text color="cyan">Esc</Text> - Cancel</Text>
+          <Text><Text color="cyan">←/→</Text> - Adjust confidence (when in confidence field)</Text>
+          <Text><Text color="cyan">?</Text> - Toggle this help</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>Press ? or Esc to return</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Main form - single column layout
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold underline>Add New Fact</Text>
-      <Text dimColor>Project: {project?.name}</Text>
-      <Box marginTop={1} />
-
-      {/* Content */}
-      <Box marginBottom={1}>
-        <Text bold color={currentField === 'content' ? 'cyan' : undefined}>
-          Content: {currentField === 'content' && <Text dimColor>(required)</Text>}
-        </Text>
-        {currentField === 'content' ? (
-          <TextInput
-            value={content}
-            onChange={setContent}
-            placeholder="e.g., Use Redis for session storage"
-          />
-        ) : (
-          <Text>{content || <Text dimColor>No content</Text>}</Text>
-        )}
+    <Box flexDirection="column" height={20}>
+      {/* Header */}
+      <Box height={3} flexDirection="column">
+        <Text bold>Add New Fact</Text>
+        <Text dimColor>{project?.name} - {project?.path}</Text>
+        {error && <Text color="red">⚠ {error}</Text>}
       </Box>
 
-      {/* Type */}
-      <Box marginBottom={1}>
-        <Text bold color={currentField === 'type' ? 'cyan' : undefined}>
-          Type:
-        </Text>
-        {currentField === 'type' ? (
-          <SelectInput
-            items={factTypes}
-            onSelect={(item) => setType(item.value)}
-            initialIndex={factTypes.findIndex(t => t.value === type)}
-          />
-        ) : (
-          <Text>{factTypes.find(t => t.value === type)?.label}</Text>
-        )}
-      </Box>
-
-      {/* Why */}
-      <Box marginBottom={1}>
-        <Text bold color={currentField === 'why' ? 'cyan' : undefined}>
-          Why: {currentField === 'why' && <Text dimColor>(optional)</Text>}
-        </Text>
-        {currentField === 'why' ? (
-          <TextInput
-            value={why}
-            onChange={setWhy}
-            placeholder="e.g., Need sub-50ms session lookups"
-          />
-        ) : (
-          <Text>{why || <Text dimColor>No reason provided</Text>}</Text>
-        )}
-      </Box>
-
-      {/* Services (for monorepos) */}
-      {project?.isMonorepo && (
-        <Box marginBottom={1}>
-          <Text bold color={currentField === 'services' ? 'cyan' : undefined}>
-            Services: {currentField === 'services' && <Text dimColor>(comma-separated)</Text>}
+      {/* Form fields */}
+      <Box flexDirection="column" height={15} paddingX={1}>
+        {/* Content field */}
+        <Box flexDirection="column" marginBottom={1}>
+          <Text bold color={currentField === 'content' ? 'cyan' : undefined}>
+            Content {!content && <Text dimColor>(required)</Text>}
           </Text>
-          {currentField === 'services' ? (
+          {currentField === 'content' ? (
             <TextInput
-              value={servicesText}
-              onChange={setServicesText}
-              placeholder={`e.g., ${project.services.slice(0, 3).join(', ')}`}
+              value={content}
+              onChange={setContent}
+              placeholder="e.g., Use Redis for session storage"
             />
           ) : (
-            <Text>{servicesText || <Text dimColor>All services</Text>}</Text>
+            <Text color={content ? undefined : 'gray'}>{content || 'No content yet'}</Text>
           )}
         </Box>
-      )}
 
-      {/* Tags */}
-      <Box marginBottom={1}>
-        <Text bold color={currentField === 'tags' ? 'cyan' : undefined}>
-          Tags: {currentField === 'tags' && <Text dimColor>(comma-separated)</Text>}
-        </Text>
-        {currentField === 'tags' ? (
-          <TextInput
-            value={tagsText}
-            onChange={setTagsText}
-            placeholder="e.g., redis, performance, caching"
-          />
-        ) : (
-          <Text>{tagsText || <Text dimColor>No tags</Text>}</Text>
-        )}
-      </Box>
+        {/* Type field */}
+        <Box flexDirection="column" marginBottom={1}>
+          <Text bold color={currentField === 'type' ? 'cyan' : undefined}>Type</Text>
+          {currentField === 'type' ? (
+            <Box height={8}>
+              <SelectInput
+                items={factTypes.map(t => ({
+                  ...t,
+                  label: `${t.label} - ${typeDescriptions[t.value]}`,
+                }))}
+                onSelect={(item) => setType(item.value)}
+                initialIndex={factTypes.findIndex(t => t.value === type)}
+                limit={8}
+              />
+            </Box>
+          ) : (
+            <Text>{factTypes.find(t => t.value === type)?.label} - <Text dimColor>{typeDescriptions[type]}</Text></Text>
+          )}
+        </Box>
 
-      {/* Confidence */}
-      <Box marginBottom={1}>
-        <Text bold color={currentField === 'confidence' ? 'cyan' : undefined}>
-          Confidence: {confidence}%
-        </Text>
-        {currentField === 'confidence' && (
-          <Box>
-            <Text dimColor>Use ← → to adjust (0-100)</Text>
-          </Box>
-        )}
-      </Box>
-
-      {/* Submit */}
-      <Box marginTop={1}>
-        {currentField === 'submit' ? (
-          <Text bold color="green">
-            Press Enter to create fact
+        {/* Why field */}
+        <Box flexDirection="column" marginBottom={1}>
+          <Text bold color={currentField === 'why' ? 'cyan' : undefined}>
+            Why <Text dimColor>(optional)</Text>
           </Text>
-        ) : (
-          <Box flexDirection="column">
-            <Text dimColor>Navigation:</Text>
-            <Text dimColor>  Tab/Shift+Tab - Next/Previous | Enter - Submit | Esc - Cancel</Text>
-            {currentField === 'confidence' && (
-              <Text dimColor>  ← → - Adjust confidence</Text>
+          {currentField === 'why' ? (
+            <TextInput
+              value={why}
+              onChange={setWhy}
+              placeholder="e.g., Need sub-50ms session lookups"
+            />
+          ) : (
+            <Text color={why ? undefined : 'gray'}>{why || 'No reason provided'}</Text>
+          )}
+        </Box>
+
+        {/* Services field (monorepo only) */}
+        {project?.isMonorepo && (
+          <Box flexDirection="column" marginBottom={1}>
+            <Text bold color={currentField === 'services' ? 'cyan' : undefined}>
+              Services <Text dimColor>(comma-separated)</Text>
+            </Text>
+            {currentField === 'services' ? (
+              <TextInput
+                value={servicesText}
+                onChange={setServicesText}
+                placeholder={`e.g., ${project.services.slice(0, 3).join(', ')}`}
+              />
+            ) : (
+              <Text color={servicesText ? undefined : 'gray'}>{servicesText || 'All services'}</Text>
             )}
           </Box>
         )}
+
+        {/* Tags field */}
+        <Box flexDirection="column" marginBottom={1}>
+          <Text bold color={currentField === 'tags' ? 'cyan' : undefined}>
+            Tags <Text dimColor>(comma-separated)</Text>
+          </Text>
+          {currentField === 'tags' ? (
+            <TextInput
+              value={tagsText}
+              onChange={setTagsText}
+              placeholder="e.g., redis, cache, performance"
+            />
+          ) : (
+            <Text color={tagsText ? undefined : 'gray'}>{tagsText || 'No tags'}</Text>
+          )}
+        </Box>
+
+        {/* Confidence field */}
+        <Box flexDirection="column">
+          <Text bold color={currentField === 'confidence' ? 'cyan' : undefined}>
+            Confidence: {confidence}%
+          </Text>
+          <Box>
+            <Text>{'[' + '█'.repeat(Math.floor(confidence / 5)) + '░'.repeat(20 - Math.floor(confidence / 5)) + ']'}</Text>
+          </Box>
+          {currentField === 'confidence' && (
+            <Text dimColor>Use ← → to adjust</Text>
+          )}
+        </Box>
       </Box>
 
-      {error && <Text color="red">Error: {error}</Text>}
+      {/* Footer */}
+      <Box height={2}>
+        <Text dimColor>
+          Tab: next | Shift+Tab: previous | Enter: save | Esc: cancel | ?: help
+        </Text>
+      </Box>
     </Box>
   );
 }

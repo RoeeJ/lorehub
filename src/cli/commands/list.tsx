@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { Database } from '../../db/database.js';
-import { ListFacts } from '../components/ListFacts.js';
+import { FactsView } from '../components/FactsView.js';
 import { getDbPath } from '../utils/db-config.js';
 
 interface ListOptions {
@@ -107,7 +107,7 @@ export async function renderList(options: ListOptions): Promise<void> {
   
   // Interactive mode with Ink
   const { waitUntilExit } = render(
-    <ListFacts
+    <FactsView
       db={db}
       projectPath={process.cwd()}
       type={options.type}

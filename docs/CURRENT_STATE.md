@@ -111,11 +111,17 @@ lorehub/
 │   │   │   ├── add.tsx ✅
 │   │   │   ├── list.tsx ✅
 │   │   │   ├── project.tsx ✅
-│   │   │   └── search.tsx ✅
+│   │   │   ├── search.tsx ✅
+│   │   │   ├── export.tsx ✅
+│   │   │   └── import.tsx ✅
 │   │   ├── components/
 │   │   │   ├── AddFact.tsx ✅
 │   │   │   ├── AddFact.test.tsx ✅
-│   │   │   └── ListFacts.tsx ✅
+│   │   │   ├── ListFacts.tsx ✅
+│   │   │   ├── SearchFacts.tsx ✅
+│   │   │   ├── Help.tsx ✅
+│   │   │   ├── ErrorMessage.tsx ✅
+│   │   │   └── Progress.tsx ✅
 │   │   └── utils/
 │   │       ├── db-config.ts ✅
 │   │       └── project.ts ✅
@@ -146,17 +152,24 @@ lorehub/
 - Created comprehensive MCP Usage Guide (docs/MCP_USAGE.md)
 - Updated README to reference MCP documentation
 - All tests passing, project builds successfully
+- Implemented grid-based UI layout with fixed heights (20 lines)
+- Added vim-style search functionality (/) to list and search views
+- Redesigned AddFact screen with two-column layout and preview
+- Added keyboard shortcuts help component (? key)
+- Created centralized error handling with user-friendly messages
+- Added progress indicators for long operations
+- Implemented export/import functionality (JSON and Markdown formats)
 
 ## Next Steps (TODO)
 
-1. **Polish Phase**:
-   - Improve UI components styling
-   - Add more keyboard shortcuts
-   - Better error messages
-   - Progress indicators for long operations
+1. **Polish Phase**: ✅ COMPLETE
+   - ✅ Improve UI components styling (grid-based layout)
+   - ✅ Add more keyboard shortcuts (/, ?, Ctrl+S)
+   - ✅ Better error messages (ErrorMessage component)
+   - ✅ Progress indicators for long operations
 
 2. **Additional Features**:
-   - Export/import functionality
+   - ✅ Export/import functionality (JSON and Markdown)
    - Fact relationships visualization
    - Time-based queries
    - Fact history/versions

@@ -1,372 +1,536 @@
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { eq, and, like, or, sql, desc } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import BetterSqlite3 from 'better-sqlite3';
-import type { Database as SqliteDatabase } from 'better-sqlite3';
-import { randomUUID } from 'crypto';
-import type {
-  Fact,
+import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from '../utils/uuid.js';
+import { projects, facts, relations, type Project as DbProject, type Fact as DbFact, type Relation as DbRelation } from './schema.js';
+import type { 
+  Fact, 
+  FactType, 
+  FactStatus, 
+  CreateFactInput, 
+  UpdateFactInput,
   Project,
-  Relation,
-  CreateFactInput,
   CreateProjectInput,
   CreateRelationInput,
-  FactType,
-  FactStatus,
+  Relation
 } from '../core/types.js';
-import { validateFact, validateProject, validateRelation } from '../core/types.js';
 
 export class Database {
-  private db: SqliteDatabase;
+  private sqlite: BetterSqlite3.Database;
+  private db: ReturnType<typeof drizzle>;
 
-  constructor(path: string = ':memory:') {
-    this.db = new BetterSqlite3(path);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('synchronous = NORMAL');
-    this.db.pragma('foreign_keys = ON');
-    this.init();
+  constructor(dbPath: string) {
+    // Ensure directory exists
+    const dbDir = dirname(dbPath);
+    if (dbDir && !existsSync(dbDir)) {
+      mkdirSync(dbDir, { recursive: true });
+    }
+    
+    this.sqlite = new BetterSqlite3(dbPath);
+    
+    // Configure SQLite for better performance
+    this.sqlite.pragma('journal_mode = WAL');
+    this.sqlite.pragma('synchronous = NORMAL');
+    this.sqlite.pragma('foreign_keys = ON');
+    
+    this.db = drizzle(this.sqlite);
+    
+    // Run Drizzle migrations
+    this.runMigrations();
   }
 
-  private init(): void {
-    this.createTables();
-    this.createIndexes();
+  private runMigrations(): void {
+    try {
+      // Get the directory where this file is located
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      
+      // Try different locations for migrations
+      let migrationsFolder = join(__dirname, '..', 'drizzle'); // dist/drizzle
+      if (!existsSync(migrationsFolder)) {
+        migrationsFolder = join(__dirname, '..', '..', '..', 'drizzle'); // project root drizzle
+      }
+      
+      // For in-memory databases in tests, we need special handling
+      if (this.sqlite.name === ':memory:') {
+        if (!existsSync(migrationsFolder)) {
+          throw new Error(
+            `Drizzle migrations folder not found for tests. Expected at: ${join(__dirname, '..', 'drizzle')} or ${join(__dirname, '..', '..', '..', 'drizzle')}`
+          );
+        }
+        // For in-memory databases, we need to run migrations synchronously
+        this.runMigrationsForInMemory(migrationsFolder);
+        return;
+      }
+      
+      if (!existsSync(migrationsFolder)) {
+        throw new Error(
+          `Drizzle migrations folder not found. Expected at: ${join(__dirname, '..', 'drizzle')} or ${join(__dirname, '..', '..', '..', 'drizzle')}`
+        );
+      }
+      
+      // Run migrations
+      migrate(this.db, { migrationsFolder });
+    } catch (error) {
+      // If migrations fail, it might be because tables already exist
+      // This is okay for existing databases
+      if (error instanceof Error && error.message.includes('already exists')) {
+        // Tables exist, that's fine
+        return;
+      }
+      throw error;
+    }
   }
-
-  private createTables(): void {
-    // Migrations table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
+  
+  private runMigrationsForInMemory(migrationsFolder: string): void {
+    // For in-memory databases, we need to read and execute migrations directly
+    const journalPath = join(migrationsFolder, 'meta', '_journal.json');
+    
+    if (!existsSync(journalPath)) {
+      throw new Error(`Migration journal not found at: ${journalPath}`);
+    }
+    
+    const journal = JSON.parse(readFileSync(journalPath, 'utf-8'));
+    
+    // Create migrations table
+    this.sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hash text NOT NULL UNIQUE,
+        created_at numeric
+      );
     `);
-
-    // Projects table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL UNIQUE,
-        git_remote TEXT,
-        is_monorepo INTEGER NOT NULL DEFAULT 0,
-        services TEXT NOT NULL DEFAULT '[]',
-        last_seen TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      )
-    `);
-
-    // Facts table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS facts (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        why TEXT,
-        type TEXT NOT NULL,
-        services TEXT NOT NULL DEFAULT '[]',
-        tags TEXT NOT NULL DEFAULT '[]',
-        confidence INTEGER NOT NULL DEFAULT 80,
-        source TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'active',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Relations table
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS relations (
-        from_fact_id TEXT NOT NULL,
-        to_fact_id TEXT NOT NULL,
-        type TEXT NOT NULL,
-        strength REAL NOT NULL DEFAULT 1.0,
-        metadata TEXT,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (from_fact_id, to_fact_id, type),
-        FOREIGN KEY (from_fact_id) REFERENCES facts(id) ON DELETE CASCADE,
-        FOREIGN KEY (to_fact_id) REFERENCES facts(id) ON DELETE CASCADE
-      )
-    `);
-  }
-
-  private createIndexes(): void {
-    // Performance indexes
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_facts_project_id ON facts(project_id);
-      CREATE INDEX IF NOT EXISTS idx_facts_type ON facts(type);
-      CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status);
-      CREATE INDEX IF NOT EXISTS idx_facts_content ON facts(content);
-      CREATE INDEX IF NOT EXISTS idx_relations_from ON relations(from_fact_id);
-      CREATE INDEX IF NOT EXISTS idx_relations_to ON relations(to_fact_id);
-    `);
+    
+    // Run each migration in order
+    for (const entry of journal.entries) {
+      const migrationPath = join(migrationsFolder, `${entry.tag}.sql`);
+      
+      if (!existsSync(migrationPath)) {
+        throw new Error(`Migration file not found: ${migrationPath}`);
+      }
+      
+      // Check if migration was already applied
+      const existing = this.sqlite.prepare(
+        'SELECT hash FROM __drizzle_migrations WHERE hash = ?'
+      ).get(entry.tag);
+      
+      if (!existing) {
+        // Read and execute migration
+        const migrationSQL = readFileSync(migrationPath, 'utf-8');
+        
+        // Split by statement breakpoint and execute each statement
+        const statements = migrationSQL.split('--> statement-breakpoint');
+        
+        for (const statement of statements) {
+          const trimmed = statement.trim();
+          if (trimmed) {
+            this.sqlite.exec(trimmed);
+          }
+        }
+        
+        // Record migration as applied
+        this.sqlite.prepare(
+          'INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)'
+        ).run(entry.tag, Date.now());
+      }
+    }
   }
 
   close(): void {
-    this.db.close();
+    this.sqlite.close();
   }
-
+  
+  // Testing utility
   listTables(): string[] {
-    const tables = this.db.prepare(`
+    const tables = this.sqlite.prepare(`
       SELECT name FROM sqlite_master 
       WHERE type='table' AND name NOT LIKE 'sqlite_%'
-    `).all() as Array<{ name: string }>;
+      ORDER BY name
+    `).all() as { name: string }[];
     
     return tables.map(t => t.name);
   }
 
+  // Transaction support
   transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)();
+    return this.sqlite.transaction(fn)();
   }
 
-  // Project operations
+  // Project methods
   createProject(input: CreateProjectInput): Project {
-    const id = input.id || `proj-${randomUUID()}`;
+    const id = input.id || uuidv4();
     const now = new Date();
     
-    const project: Project = validateProject({
-      ...input,
+    const project = {
       id,
-      createdAt: input.createdAt || now,
-      lastSeen: input.lastSeen || now,
-    });
+      name: input.name,
+      path: input.path,
+      gitRemote: input.gitRemote || null,
+      isMonorepo: input.isMonorepo || false,
+      services: JSON.stringify(input.services || []),
+      lastSeen: (input.lastSeen || now).toISOString(),
+      createdAt: (input.createdAt || now).toISOString(),
+    };
 
-    this.db.prepare(`
-      INSERT INTO projects (id, name, path, git_remote, is_monorepo, services, last_seen, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      project.id,
-      project.name,
-      project.path,
-      project.gitRemote || null,
-      project.isMonorepo ? 1 : 0,
-      JSON.stringify(project.services),
-      project.lastSeen.toISOString(),
-      project.createdAt.toISOString()
-    );
+    this.db.insert(projects).values(project).run();
+    
+    return this.findProject(id)!;
+  }
 
-    return project;
+  findProject(id: string): Project | null {
+    const result = this.db.select().from(projects).where(eq(projects.id, id)).get();
+    return result ? this.dbProjectToProject(result) : null;
   }
 
   findProjectByPath(path: string): Project | null {
-    const row = this.db.prepare(`
-      SELECT * FROM projects WHERE path = ?
-    `).get(path) as any;
-
-    if (!row) return null;
-
-    return this.rowToProject(row);
+    const result = this.db.select().from(projects).where(eq(projects.path, path)).get();
+    return result ? this.dbProjectToProject(result) : null;
   }
 
-  updateProjectLastSeen(projectId: string): Project {
-    const now = new Date();
+  updateProjectLastSeen(id: string): Project | null {
+    this.db.update(projects)
+      .set({ lastSeen: new Date().toISOString() })
+      .where(eq(projects.id, id))
+      .run();
     
-    this.db.prepare(`
-      UPDATE projects SET last_seen = ? WHERE id = ?
-    `).run(now.toISOString(), projectId);
-
-    const row = this.db.prepare(`
-      SELECT * FROM projects WHERE id = ?
-    `).get(projectId) as any;
-
-    return this.rowToProject(row);
+    return this.findProject(id);
   }
 
   listProjects(): Project[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM projects ORDER BY last_seen DESC
-    `).all() as any[];
-
-    return rows.map(row => this.rowToProject(row));
+    const results = this.db.select().from(projects).orderBy(desc(projects.lastSeen)).all();
+    return results.map(p => this.dbProjectToProject(p));
   }
 
-  private rowToProject(row: any): Project {
-    return validateProject({
-      id: row.id,
-      name: row.name,
-      path: row.path,
-      gitRemote: row.git_remote || undefined,
-      isMonorepo: row.is_monorepo === 1,
-      services: JSON.parse(row.services),
-      lastSeen: new Date(row.last_seen),
-      createdAt: new Date(row.created_at),
-    });
-  }
-
-  // Fact operations
+  // Fact methods
   createFact(input: CreateFactInput): Fact {
-    const id = input.id || `fact-${randomUUID()}`;
+    const id = input.id || uuidv4();
     const now = new Date();
     
-    const fact: Fact = validateFact({
-      ...input,
+    const fact = {
       id,
-      createdAt: input.createdAt || now,
-      updatedAt: input.updatedAt || now,
-    });
+      projectId: input.projectId,
+      content: input.content,
+      why: input.why || null,
+      type: input.type,
+      services: JSON.stringify(input.services || []),
+      tags: JSON.stringify(input.tags || []),
+      confidence: input.confidence || 80,
+      source: JSON.stringify(input.source),
+      status: input.status || 'active',
+      createdAt: (input.createdAt || now).toISOString(),
+      updatedAt: (input.updatedAt || now).toISOString(),
+    };
 
-    this.db.prepare(`
-      INSERT INTO facts (
-        id, project_id, content, why, type, services, tags, 
-        confidence, source, status, created_at, updated_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      fact.id,
-      fact.projectId,
-      fact.content,
-      fact.why || null,
-      fact.type,
-      JSON.stringify(fact.services),
-      JSON.stringify(fact.tags),
-      fact.confidence,
-      JSON.stringify(fact.source),
-      fact.status,
-      fact.createdAt.toISOString(),
-      fact.updatedAt.toISOString()
-    );
-
-    return fact;
+    this.db.insert(facts).values(fact).run();
+    
+    return this.findFact(id)!;
   }
 
+  findFact(id: string): Fact | null {
+    const result = this.db.select().from(facts).where(eq(facts.id, id)).get();
+    return result ? this.dbFactToFact(result) : null;
+  }
+  
+  // Alias for compatibility
   getFactById(id: string): Fact | null {
-    const row = this.db.prepare(`
-      SELECT * FROM facts WHERE id = ?
-    `).get(id) as any;
+    return this.findFact(id);
+  }
 
-    if (!row) return null;
+  updateFact(id: string, input: UpdateFactInput): Fact | null {
+    const updates: any = {
+      updatedAt: new Date().toISOString(),
+    };
 
-    return this.rowToFact(row);
+    if (input.content !== undefined) updates.content = input.content;
+    if (input.why !== undefined) updates.why = input.why;
+    if (input.type !== undefined) updates.type = input.type;
+    if (input.services !== undefined) updates.services = JSON.stringify(input.services);
+    if (input.tags !== undefined) updates.tags = JSON.stringify(input.tags);
+    if (input.confidence !== undefined) updates.confidence = input.confidence;
+    if (input.source !== undefined) updates.source = JSON.stringify(input.source);
+    if (input.status !== undefined) updates.status = input.status;
+
+    this.db.update(facts).set(updates).where(eq(facts.id, id)).run();
+    
+    return this.findFact(id);
+  }
+  
+  // Alias for compatibility
+  updateFactStatus(id: string, status: FactStatus): void {
+    this.updateFact(id, { status });
+  }
+
+  deleteFact(id: string): void {
+    this.db.delete(facts).where(eq(facts.id, id)).run();
+  }
+
+  softDeleteFact(id: string): void {
+    this.db.update(facts)
+      .set({ 
+        status: 'archived',
+        updatedAt: new Date().toISOString()
+      })
+      .where(eq(facts.id, id))
+      .run();
+  }
+
+  restoreFact(id: string): void {
+    this.db.update(facts)
+      .set({ 
+        status: 'active',
+        updatedAt: new Date().toISOString()
+      })
+      .where(eq(facts.id, id))
+      .run();
   }
 
   listFactsByProject(projectId: string): Fact[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM facts WHERE project_id = ? ORDER BY created_at DESC
-    `).all(projectId) as any[];
-
-    return rows.map(row => this.rowToFact(row));
+    const results = this.db.select()
+      .from(facts)
+      .where(eq(facts.projectId, projectId))
+      .orderBy(desc(facts.createdAt))
+      .all();
+    
+    return results.map(f => this.dbFactToFact(f));
   }
 
   listFactsByType(projectId: string, type: FactType): Fact[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM facts 
-      WHERE project_id = ? AND type = ? 
-      ORDER BY created_at DESC
-    `).all(projectId, type) as any[];
-
-    return rows.map(row => this.rowToFact(row));
+    const results = this.db.select()
+      .from(facts)
+      .where(and(eq(facts.projectId, projectId), eq(facts.type, type)))
+      .orderBy(desc(facts.createdAt))
+      .all();
+    
+    return results.map(f => this.dbFactToFact(f));
   }
 
   listFactsByService(projectId: string, service: string): Fact[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM facts 
-      WHERE project_id = ? AND services LIKE ? 
-      ORDER BY created_at DESC
-    `).all(projectId, `%"${service}"%`) as any[];
-
-    return rows.map(row => this.rowToFact(row));
-  }
-
-  updateFactStatus(factId: string, status: FactStatus): Fact {
-    const now = new Date();
+    // Use SQL LIKE with JSON array search pattern
+    const results = this.db.select()
+      .from(facts)
+      .where(and(
+        eq(facts.projectId, projectId),
+        like(facts.services, `%"${service}"%`)
+      ))
+      .orderBy(desc(facts.createdAt))
+      .all();
     
-    this.db.prepare(`
-      UPDATE facts SET status = ?, updated_at = ? WHERE id = ?
-    `).run(status, now.toISOString(), factId);
-
-    return this.getFactById(factId)!;
+    return results.map(f => this.dbFactToFact(f));
   }
 
-  searchFacts(projectId: string, query: string): Fact[] {
-    // Convert wildcard syntax to SQL LIKE pattern
-    let sqlPattern = query
-      .replace(/\*/g, '%')  // Replace * with %
-      .replace(/\?/g, '_'); // Replace ? with _
+  searchFacts(projectId: string, query: string, limit?: number): Fact[] {
+    // Convert wildcards to SQL patterns
+    const pattern = `%${query.replace(/\*/g, '%').replace(/\?/g, '_')}%`;
     
-    // If no wildcards were present, add % around the query for substring match
-    if (!query.includes('*') && !query.includes('?')) {
-      sqlPattern = `%${sqlPattern}%`;
-    }
+    const baseQuery = this.db.select()
+      .from(facts)
+      .where(and(
+        eq(facts.projectId, projectId),
+        or(
+          like(facts.content, pattern),
+          like(facts.tags, pattern)
+        )
+      ))
+      .orderBy(desc(facts.createdAt));
     
-    const rows = this.db.prepare(`
-      SELECT * FROM facts 
-      WHERE project_id = ? AND LOWER(content) LIKE LOWER(?) 
-      ORDER BY created_at DESC
-    `).all(projectId, sqlPattern) as any[];
-
-    return rows.map(row => this.rowToFact(row));
+    const results = limit ? baseQuery.limit(limit).all() : baseQuery.all();
+    return results.map(f => this.dbFactToFact(f));
   }
 
-  deleteFact(factId: string): void {
-    this.db.prepare(`DELETE FROM facts WHERE id = ?`).run(factId);
+  searchFactsGlobal(query: string, limit?: number): Fact[] {
+    // Convert wildcards to SQL patterns
+    const pattern = `%${query.replace(/\*/g, '%').replace(/\?/g, '_')}%`;
+    
+    const baseQuery = this.db.select()
+      .from(facts)
+      .where(or(
+        like(facts.content, pattern),
+        like(facts.tags, pattern)
+      ))
+      .orderBy(desc(facts.createdAt));
+    
+    const results = limit ? baseQuery.limit(limit).all() : baseQuery.all();
+    return results.map(f => this.dbFactToFact(f));
   }
 
-  private rowToFact(row: any): Fact {
-    return validateFact({
-      id: row.id,
-      projectId: row.project_id,
-      content: row.content,
-      why: row.why || undefined,
-      type: row.type,
-      services: JSON.parse(row.services),
-      tags: JSON.parse(row.tags),
-      confidence: row.confidence,
-      source: JSON.parse(row.source),
-      status: row.status,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
-    });
+  getProjectFactCount(projectId: string): number {
+    const result = this.db.select({ count: sql<number>`count(*)` })
+      .from(facts)
+      .where(eq(facts.projectId, projectId))
+      .get();
+    
+    return result?.count || 0;
   }
 
-  // Relation operations
+  // Relation methods
   createRelation(input: CreateRelationInput): Relation {
-    const now = new Date();
+    const relation = {
+      fromFactId: input.fromFactId,
+      toFactId: input.toFactId,
+      type: input.type,
+      strength: input.strength || 1.0,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+      createdAt: (input.createdAt || new Date()).toISOString(),
+    };
+
+    this.db.insert(relations).values(relation).run();
     
-    const relation: Relation = validateRelation({
-      ...input,
-      createdAt: input.createdAt || now,
-    });
-
-    this.db.prepare(`
-      INSERT INTO relations (from_fact_id, to_fact_id, type, strength, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      relation.fromFactId,
-      relation.toFactId,
-      relation.type,
-      relation.strength,
-      relation.metadata ? JSON.stringify(relation.metadata) : null,
-      relation.createdAt.toISOString()
-    );
-
-    return relation;
+    return this.dbRelationToRelation(relation as DbRelation);
   }
 
-  listRelationsByFact(factId: string, direction: 'from' | 'to' | 'both' = 'both'): Relation[] {
-    let query: string;
-    let params: string[];
+  listRelationsByFact(factId: string): Relation[] {
+    const results = this.db.select()
+      .from(relations)
+      .where(or(
+        eq(relations.fromFactId, factId),
+        eq(relations.toFactId, factId)
+      ))
+      .all();
+    
+    return results.map(r => this.dbRelationToRelation(r));
+  }
 
-    if (direction === 'from') {
-      query = `SELECT * FROM relations WHERE from_fact_id = ?`;
-      params = [factId];
-    } else if (direction === 'to') {
-      query = `SELECT * FROM relations WHERE to_fact_id = ?`;
-      params = [factId];
-    } else {
-      query = `SELECT * FROM relations WHERE from_fact_id = ? OR to_fact_id = ?`;
-      params = [factId, factId];
+  deleteRelation(fromFactId: string, toFactId: string, type: string): void {
+    this.db.delete(relations)
+      .where(and(
+        eq(relations.fromFactId, fromFactId),
+        eq(relations.toFactId, toFactId),
+        eq(relations.type, type)
+      ))
+      .run();
+  }
+
+  // Export/Import methods
+  exportData(projectId?: string): {
+    projects: Project[];
+    facts: Fact[];
+    relations: Relation[];
+  } {
+    if (projectId) {
+      const project = this.findProject(projectId);
+      if (!project) {
+        throw new Error(`Project ${projectId} not found`);
+      }
+      
+      const projectFacts = this.listFactsByProject(projectId);
+      const factIds = new Set(projectFacts.map(f => f.id));
+      
+      const relevantRelations = this.db.select()
+        .from(relations)
+        .all()
+        .filter(r => factIds.has(r.fromFactId) || factIds.has(r.toFactId))
+        .map(r => this.dbRelationToRelation(r));
+      
+      return {
+        projects: [project],
+        facts: projectFacts,
+        relations: relevantRelations,
+      };
     }
-
-    const rows = this.db.prepare(query).all(...params) as any[];
-    return rows.map(row => this.rowToRelation(row));
+    
+    return {
+      projects: this.listProjects(),
+      facts: this.searchFactsGlobal('*'),
+      relations: this.db.select().from(relations).all().map(r => this.dbRelationToRelation(r)),
+    };
   }
 
-  private rowToRelation(row: any): Relation {
-    return validateRelation({
-      fromFactId: row.from_fact_id,
-      toFactId: row.to_fact_id,
-      type: row.type,
-      strength: row.strength,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      createdAt: new Date(row.created_at),
+  importData(
+    data: {
+      projects: CreateProjectInput[];
+      facts: CreateFactInput[];
+      relations: CreateRelationInput[];
+    },
+    mode: 'replace' | 'merge' = 'replace'
+  ): void {
+    this.transaction(() => {
+      if (mode === 'replace') {
+        // Clear existing data
+        this.db.delete(relations).run();
+        this.db.delete(facts).run();
+        this.db.delete(projects).run();
+      }
+      
+      // Import projects
+      for (const project of data.projects) {
+        if (mode === 'merge') {
+          const existing = this.findProject(project.id!);
+          if (existing) continue;
+        }
+        this.createProject(project);
+      }
+      
+      // Import facts
+      for (const fact of data.facts) {
+        if (mode === 'merge') {
+          const existing = this.findFact(fact.id!);
+          if (existing) continue;
+        }
+        this.createFact(fact);
+      }
+      
+      // Import relations
+      for (const relation of data.relations) {
+        if (mode === 'merge') {
+          // Check if relation already exists
+          const existing = this.db.select()
+            .from(relations)
+            .where(and(
+              eq(relations.fromFactId, relation.fromFactId),
+              eq(relations.toFactId, relation.toFactId),
+              eq(relations.type, relation.type)
+            ))
+            .get();
+          if (existing) continue;
+        }
+        this.createRelation(relation);
+      }
     });
+  }
+
+  // Helper methods to convert between DB and domain types
+  private dbProjectToProject(dbProject: DbProject): Project {
+    return {
+      id: dbProject.id,
+      name: dbProject.name,
+      path: dbProject.path,
+      gitRemote: dbProject.gitRemote || undefined,
+      isMonorepo: dbProject.isMonorepo,
+      services: JSON.parse(dbProject.services),
+      lastSeen: new Date(dbProject.lastSeen),
+      createdAt: new Date(dbProject.createdAt),
+    };
+  }
+
+  private dbFactToFact(dbFact: DbFact): Fact {
+    return {
+      id: dbFact.id,
+      projectId: dbFact.projectId,
+      content: dbFact.content,
+      why: dbFact.why || undefined,
+      type: dbFact.type as FactType,
+      services: JSON.parse(dbFact.services),
+      tags: JSON.parse(dbFact.tags),
+      confidence: dbFact.confidence,
+      source: JSON.parse(dbFact.source),
+      status: dbFact.status as FactStatus,
+      createdAt: new Date(dbFact.createdAt),
+      updatedAt: new Date(dbFact.updatedAt),
+    };
+  }
+
+  private dbRelationToRelation(dbRelation: DbRelation): Relation {
+    return {
+      fromFactId: dbRelation.fromFactId,
+      toFactId: dbRelation.toFactId,
+      type: dbRelation.type as any,
+      strength: dbRelation.strength,
+      metadata: dbRelation.metadata ? JSON.parse(dbRelation.metadata) : undefined,
+      createdAt: new Date(dbRelation.createdAt),
+    };
   }
 }
