@@ -8,9 +8,15 @@ interface ProjectInfoProps {
   projectPath: string;
 }
 
+interface ProjectStats {
+  totalFacts: number;
+  factsByType: Record<string, number>;
+  lastFactDate?: Date;
+}
+
 function ProjectInfo({ projectPath }: ProjectInfoProps) {
   const [project, setProject] = React.useState<any>(null);
-  const [stats, setStats] = React.useState<any>(null);
+  const [stats, setStats] = React.useState<ProjectStats | null>(null);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -34,8 +40,8 @@ function ProjectInfo({ projectPath }: ProjectInfoProps) {
         }
         
         // Get project statistics
-        const facts = db.listFacts({ projectId: dbProject.id, limit: 1000 });
-        const factsByType = facts.reduce((acc, fact) => {
+        const facts = db.listFactsByProject(dbProject.id);
+        const factsByType = facts.reduce((acc: Record<string, number>, fact) => {
           acc[fact.type] = (acc[fact.type] || 0) + 1;
           return acc;
         }, {} as Record<string, number>);
@@ -60,6 +66,10 @@ function ProjectInfo({ projectPath }: ProjectInfoProps) {
 
   if (loading) {
     return <Text>Loading project information...</Text>;
+  }
+
+  if (!project || !stats) {
+    return <Text color="red">Error loading project information</Text>;
   }
 
   return (
@@ -90,18 +100,18 @@ function ProjectInfo({ projectPath }: ProjectInfoProps) {
         )}
       </Box>
 
-      {Object.keys(stats.factsByType).length > 0 && (
-        <>
+      {stats.factsByType && Object.keys(stats.factsByType).length > 0 && (
+        <Box flexDirection="column">
           <Box marginTop={1} />
           <Text bold>Facts by Type:</Text>
           <Box flexDirection="column" marginLeft={2}>
             {Object.entries(stats.factsByType).map(([type, count]) => (
               <Text key={type}>
-                {type}: {count}
+                {type}: {String(count)}
               </Text>
             ))}
           </Box>
-        </>
+        </Box>
       )}
 
       <Box marginTop={1} />
