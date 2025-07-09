@@ -68,6 +68,8 @@ export function createCLI(): Command {
     .option('-s, --service <service>', 'Filter by service')
     .option('-p, --project <path>', 'Filter by specific project path')
     .option('--current', 'Search only in current project')
+    .option('--semantic', 'Use semantic search to find conceptually similar facts')
+    .option('--threshold <number>', 'Similarity threshold for semantic search (0-1)', '0.3')
     .action(async (query: string, options) => {
       try {
         await renderSearch({
@@ -76,6 +78,8 @@ export function createCLI(): Command {
           service: options.service,
           projectPath: options.project,
           currentProjectOnly: options.current,
+          semantic: options.semantic,
+          threshold: parseFloat(options.threshold),
         });
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
@@ -195,6 +199,112 @@ export function createCLI(): Command {
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
         process.exit(1);
+      }
+    });
+
+  // Similar command
+  program
+    .command('similar <factId>')
+    .description('Find facts similar to a given fact')
+    .option('-l, --limit <number>', 'Maximum number of similar facts to show', '10')
+    .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.5')
+    .action(async (factId: string, options) => {
+      try {
+        const dbPath = getDbPath();
+        const db = new Database(dbPath);
+        
+        const fact = db.findFact(factId);
+        if (!fact) {
+          console.error(`Fact with ID ${factId} not found`);
+          process.exit(1);
+        }
+        
+        console.log(`\nFinding facts similar to:\n[${fact.type}] ${fact.content}\n`);
+        
+        const similarFacts = await db.findSimilarFacts(factId, {
+          limit: parseInt(options.limit),
+          threshold: parseFloat(options.threshold)
+        });
+        
+        if (similarFacts.length === 0) {
+          console.log('No similar facts found');
+        } else {
+          console.log(`Found ${similarFacts.length} similar fact${similarFacts.length === 1 ? '' : 's'}:\n`);
+          similarFacts.forEach((similar, index) => {
+            const project = db.findProject(similar.projectId);
+            console.log(`${index + 1}. [${similar.type}] ${similar.content}`);
+            console.log(`   Similarity: ${(similar.similarity * 100).toFixed(1)}%`);
+            console.log(`   Project: ${project?.name || 'Unknown'} (${project?.path || 'Unknown'})`);
+            if (similar.why) {
+              console.log(`   Why: ${similar.why}`);
+            }
+            console.log('');
+          });
+        }
+        
+        db.close();
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
+        process.exit(1);
+      }
+    });
+
+  // Migrate embeddings command
+  program
+    .command('migrate-embeddings')
+    .description('Generate embeddings for existing facts')
+    .option('-p, --project <id>', 'Generate embeddings for specific project only')
+    .option('-b, --batch-size <size>', 'Number of facts to process at once', '50')
+    .action(async (options) => {
+      const dbPath = getDbPath();
+      const db = new Database(dbPath);
+      
+      console.log('Initializing embedding service...');
+      
+      try {
+        // Count facts without embeddings
+        const query = options.project
+          ? `SELECT COUNT(*) as count FROM facts WHERE (embedding_generated = 0 OR embedding_generated IS NULL) AND project_id = ?`
+          : `SELECT COUNT(*) as count FROM facts WHERE embedding_generated = 0 OR embedding_generated IS NULL`;
+        
+        const params = options.project ? [options.project] : [];
+        const result = db['sqlite'].prepare(query).get(...params) as { count: number };
+        const totalFacts = result.count;
+        
+        if (totalFacts === 0) {
+          console.log('✓ All facts already have embeddings!');
+          db.close();
+          return;
+        }
+        
+        console.log(`Found ${totalFacts} facts without embeddings. Starting migration...`);
+        
+        let processed = 0;
+        const batchSize = parseInt(options.batchSize);
+        
+        while (processed < totalFacts) {
+          console.log(`Processing facts ${processed + 1}-${Math.min(processed + batchSize, totalFacts)} of ${totalFacts}...`);
+          
+          const count = await db.generateMissingEmbeddings(options.project, batchSize);
+          processed += count;
+          
+          if (count === 0) {
+            // No more facts to process
+            break;
+          }
+          
+          // Update progress
+          const percentage = Math.round((processed / totalFacts) * 100);
+          console.log(`Progress: ${percentage}% (${processed}/${totalFacts} facts)`);
+        }
+        
+        console.log(`✓ Successfully generated embeddings for ${processed} facts!`);
+      } catch (error) {
+        console.error('✗ Failed to generate embeddings');
+        console.error(error);
+        process.exit(1);
+      } finally {
+        db.close();
       }
     });
 

@@ -4,6 +4,10 @@ import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import { Help } from './Help.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
+import { SimilarFactsView } from './SimilarFactsView.js';
+import { TruncatedText } from './TruncatedText.js';
+import { AlternativeScreenView } from './AlternativeScreenView.js';
+import { useTerminalDimensions } from '../hooks/useTerminalDimensions.js';
 import type { Database } from '../../db/database.js';
 import type { Fact, FactType } from '../../core/types.js';
 
@@ -31,6 +35,7 @@ export function FactsView({
   currentProjectOnly,
 }: FactsViewProps) {
   const { exit } = useApp();
+  const { columns, rows } = useTerminalDimensions();
   const [facts, setFacts] = useState<Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -40,6 +45,9 @@ export function FactsView({
   const [showHelp, setShowHelp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [similarFactsCounts, setSimilarFactsCounts] = useState<Map<string, number>>(new Map());
+  const [loadingSimilarCounts, setLoadingSimilarCounts] = useState(false);
+  const [showSimilarFacts, setShowSimilarFacts] = useState(false);
 
   useInput((input, key) => {
     if (showHelp) {
@@ -80,6 +88,8 @@ export function FactsView({
         setShowHelp(true);
       } else if (input === 'd' && filteredFacts.length > 0) {
         setShowDeleteConfirm(true);
+      } else if (input === 's' && filteredFacts.length > 0) {
+        setShowSimilarFacts(true);
       }
     }
   });
@@ -183,6 +193,40 @@ export function FactsView({
     setLoading(false);
   }, [db, projectPath, initialQuery, type, service, limit, filterProjectPath, currentProjectOnly]);
 
+  // Load similar facts counts
+  useEffect(() => {
+    const loadSimilarCounts = async () => {
+      if (facts.length === 0) return;
+      
+      setLoadingSimilarCounts(true);
+      const counts = new Map<string, number>();
+      
+      // Load counts in batches to avoid overwhelming the system
+      const batchSize = 10;
+      for (let i = 0; i < facts.length && i < limit; i += batchSize) {
+        const batch = facts.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async (fact) => {
+            try {
+              const similar = await db.findSimilarFacts(fact.id, { 
+                limit: 10, 
+                threshold: 0.5 
+              });
+              counts.set(fact.id, similar.length);
+            } catch (error) {
+              counts.set(fact.id, 0);
+            }
+          })
+        );
+      }
+      
+      setSimilarFactsCounts(counts);
+      setLoadingSimilarCounts(false);
+    };
+
+    loadSimilarCounts();
+  }, [facts, db, limit]);
+
   if (loading) {
     return <Text>Loading facts...</Text>;
   }
@@ -206,14 +250,38 @@ export function FactsView({
     );
   }
 
+  // Calculate dimensions early so we can use them in items mapping
+  const headerHeight = 3;
+  const footerHeight = 2;
+  const contentHeight = rows - headerHeight - footerHeight - 1; // -1 for padding
+  
+  // Split width: 60% for facts list, 40% for details on wide screens
+  // On narrow screens, use 50/50 split
+  const factsWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
+  const detailsWidth = columns - factsWidth - 3; // -3 for margins and borders
+
   const items = filteredFacts.map((fact, index) => {
     const typeStr = `[${fact.type.substring(0, 3).toUpperCase()}]`;
-    const content = fact.content.length > 35 
-      ? fact.content.substring(0, 35) + '...' 
-      : fact.content.padEnd(35, ' ');
+    const similarCount = similarFactsCounts.get(fact.id) || 0;
+    
+    // Use fixed-width formatting
+    // • for current project (instead of star for predictable width)
+    // Fixed width similarity count (3 chars + ≈)
+    const projectMarker = fact.isCurrentProject ? '•' : ' ';
+    const similarStr = similarCount > 0 ? `${similarCount.toString().padStart(3)}≈` : '    ';
+    
+    // Calculate available width for content
+    // Account for: project marker (1), space (1), similar count (4), space (1), type (5), space (1)
+    const prefixLength = 1 + 1 + 4 + 1 + 5 + 1;
+    const availableWidth = factsWidth - prefixLength - 4; // -4 for padding/margins
+    const contentMaxLength = Math.max(20, availableWidth); // minimum 20 chars
+    
+    const content = fact.content.length > contentMaxLength 
+      ? fact.content.substring(0, contentMaxLength - 3) + '...' 
+      : fact.content;
     
     return {
-      label: `${fact.isCurrentProject ? '⭐' : ' '} ${typeStr} ${content}`,
+      label: `${projectMarker} ${similarStr} ${typeStr} ${content}`,
       value: index,
     };
   });
@@ -249,26 +317,46 @@ export function FactsView({
 
   // Show help screen if requested
   if (showHelp) {
-    return <Help context={initialQuery ? 'search' : 'list'} />;
+    return (
+      <AlternativeScreenView>
+        <Help context={initialQuery ? 'search' : 'list'} />
+      </AlternativeScreenView>
+    );
   }
 
   // Show confirmation dialog instead of normal view
   if (showDeleteConfirm && selectedFact) {
     return (
-      <Box flexDirection="column" height={20} justifyContent="center" alignItems="center">
-        <ConfirmDialog
-          message={`Delete fact: "${selectedFact.content.substring(0, 50)}${selectedFact.content.length > 50 ? '...' : ''}"?`}
-          onConfirm={handleDelete}
-          onCancel={() => setShowDeleteConfirm(false)}
-          dangerous={true}
-        />
-      </Box>
+      <AlternativeScreenView>
+        <Box flexDirection="column" height={20} justifyContent="center" alignItems="center">
+          <ConfirmDialog
+            message={`Delete fact: "${selectedFact.content.substring(0, 50)}${selectedFact.content.length > 50 ? '...' : ''}"?`}
+            onConfirm={handleDelete}
+            onCancel={() => setShowDeleteConfirm(false)}
+            dangerous={true}
+          />
+        </Box>
+      </AlternativeScreenView>
     );
   }
 
-  // Fixed height container
+  // Show similar facts view
+  if (showSimilarFacts && selectedFact) {
+    return (
+      <AlternativeScreenView>
+        <SimilarFactsView 
+          db={db} 
+          fact={selectedFact} 
+          onBack={() => setShowSimilarFacts(false)}
+        />
+      </AlternativeScreenView>
+    );
+  }
+
+  // Full screen container
   return (
-    <Box flexDirection="column" height={20}>
+    <AlternativeScreenView>
+      <Box flexDirection="column" height={rows - 1}>
       {/* Header - fixed height */}
       <Box height={3} flexDirection="column">
         <Text bold>
@@ -292,56 +380,83 @@ export function FactsView({
         )}
       </Box>
 
-      {/* Main content area - fixed height */}
-      <Box flexDirection="row" height={15}>
+      {/* Main content area - dynamic height */}
+      <Box flexDirection="row" height={contentHeight} overflow="hidden">
         {/* Left pane - fact list */}
-        <Box flexDirection="column" width="50%" marginRight={2}>
+        <Box flexDirection="column" width={factsWidth} marginRight={2}>
           <Text bold dimColor>{initialQuery ? 'Results' : 'Facts'}</Text>
-          <Box marginTop={1}>
+          <Box marginTop={1} width="100%">
             <SelectInput
               items={items}
               onSelect={handleSelect}
               onHighlight={handleSelect}
               initialIndex={0}
-              limit={12}
+              limit={contentHeight - 2}
             />
           </Box>
         </Box>
 
         {/* Right pane - details */}
-        <Box flexDirection="column" width="50%">
+        <Box flexDirection="column" width={detailsWidth} overflow="hidden">
           <Text bold dimColor>Details</Text>
           {selectedFact && (
-            <Box flexDirection="column" marginTop={1}>
-              {/* Content - always show */}
-              <Box height={3}>
-                <Text wrap="wrap">{selectedFact.content}</Text>
-              </Box>
-              
-              {/* Why - fixed height block */}
-              <Box height={2} marginTop={1}>
-                <Text dimColor>Why: </Text>
-                <Text color="cyan">{selectedFact.why || '-'}</Text>
-              </Box>
-
-              {/* Metadata - fixed layout */}
-              <Box flexDirection="column" marginTop={1}>
-                <Text dimColor>Project: {selectedFact.projectName}{selectedFact.isCurrentProject ? ' ⭐' : ''}</Text>
-                <Text dimColor>Type: {selectedFact.type} | Status: {selectedFact.status}</Text>
-                <Text dimColor>Confidence: {selectedFact.confidence}% | {selectedFact.createdAt.toLocaleDateString()}</Text>
-              </Box>
-
-              {/* Tags - fixed height */}
-              <Box height={1} marginTop={1}>
-                <Text dimColor>Tags: {selectedFact.tags.length > 0 ? selectedFact.tags.join(', ') : '-'}</Text>
+            <Box flexDirection="column" marginTop={1} height={contentHeight - 2} overflow="hidden">
+              {/* Content section - flexible height */}
+              <Box flexDirection="column" flexGrow={1} overflow="hidden">
+                <TruncatedText 
+                  text={selectedFact.content} 
+                  maxLines={selectedFact.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
+                  width={detailsWidth} 
+                />
+                {selectedFact.why && (
+                  <Box marginTop={1} flexDirection="column">
+                    <TruncatedText 
+                      text={`Why: ${selectedFact.why}`} 
+                      maxLines={Math.floor((contentHeight - 10) * 0.4)} 
+                      width={detailsWidth} 
+                      dimColor={true}
+                    />
+                  </Box>
+                )}
               </Box>
 
-              {/* Services - fixed height */}
-              {selectedFact.services.length > 0 && (
-                <Box height={1}>
-                  <Text dimColor>Services: {selectedFact.services.join(', ')}</Text>
-                </Box>
-              )}
+              {/* Metadata section - fixed at bottom */}
+              <Box flexDirection="column" flexShrink={0} marginTop={1}>
+                <TruncatedText 
+                  text={`Project: ${selectedFact.projectName}${selectedFact.isCurrentProject ? ' •' : ''}`}
+                  maxLines={1}
+                  width={detailsWidth}
+                  dimColor={true}
+                />
+                <TruncatedText 
+                  text={`Type: ${selectedFact.type} | Status: ${selectedFact.status}`}
+                  maxLines={1}
+                  width={detailsWidth}
+                  dimColor={true}
+                />
+                <TruncatedText 
+                  text={`Confidence: ${selectedFact.confidence}% | ${selectedFact.createdAt.toLocaleDateString()}`}
+                  maxLines={1}
+                  width={detailsWidth}
+                  dimColor={true}
+                />
+                {selectedFact.tags.length > 0 && (
+                  <TruncatedText 
+                    text={`Tags: ${selectedFact.tags.join(', ')}`}
+                    maxLines={1}
+                    width={detailsWidth}
+                    dimColor={true}
+                  />
+                )}
+                {selectedFact.services.length > 0 && (
+                  <TruncatedText 
+                    text={`Services: ${selectedFact.services.join(', ')}`}
+                    maxLines={1}
+                    width={detailsWidth}
+                    dimColor={true}
+                  />
+                )}
+              </Box>
             </Box>
           )}
         </Box>
@@ -352,9 +467,10 @@ export function FactsView({
         <Text dimColor>
           {isSearching 
             ? 'Type to filter | Enter: confirm | Esc: cancel' 
-            : 'q: quit | ↑↓: navigate | /: filter | d: delete | ?: help'}
+            : 'q: quit | ↑↓: navigate | /: filter | d: delete | s: similar | ?: help'}
         </Text>
       </Box>
     </Box>
+    </AlternativeScreenView>
   );
 }

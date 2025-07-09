@@ -99,6 +99,19 @@ const GetProjectStatsSchema = z.object({
   project_path: z.string().describe('The project path to get statistics for'),
 });
 
+const SemanticSearchFactsSchema = z.object({
+  query: z.string().describe('Natural language query to find semantically similar facts'),
+  project_path: z.string().optional().describe('Project path to search in (searches all projects if not specified)'),
+  threshold: z.number().min(0).max(1).optional().default(0.7).describe('Similarity threshold (0-1, higher is more similar)'),
+  limit: z.number().optional().default(20).describe('Maximum number of results'),
+});
+
+const FindSimilarFactsSchema = z.object({
+  fact_id: z.string().describe('The ID of the fact to find similar facts for'),
+  limit: z.number().optional().default(10).describe('Maximum number of similar facts to return'),
+  threshold: z.number().min(0).max(1).optional().default(0.5).describe('Similarity threshold (0-1)'),
+});
+
 export class LoreHubServer {
   private server: Server;
   private db: Database;
@@ -391,6 +404,33 @@ export class LoreHubServer {
               required: ['project_path'],
             },
           },
+          {
+            name: 'semantic_search_facts',
+            description: 'Search facts using semantic similarity to find conceptually related facts',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: { type: 'string', description: 'Natural language query to find semantically similar facts' },
+                project_path: { type: 'string', description: 'Project path to search in (searches all projects if not specified)' },
+                threshold: { type: 'number', description: 'Similarity threshold (0-1, higher is more similar)', default: 0.7, minimum: 0, maximum: 1 },
+                limit: { type: 'number', description: 'Maximum number of results', default: 20 },
+              },
+              required: ['query'],
+            },
+          },
+          {
+            name: 'find_similar_facts',
+            description: 'Find facts similar to a given fact',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                fact_id: { type: 'string', description: 'The ID of the fact to find similar facts for' },
+                limit: { type: 'number', description: 'Maximum number of similar facts to return', default: 10 },
+                threshold: { type: 'number', description: 'Similarity threshold (0-1)', default: 0.5, minimum: 0, maximum: 1 },
+              },
+              required: ['fact_id'],
+            },
+          },
         ],
       };
     });
@@ -424,6 +464,10 @@ export class LoreHubServer {
           return this.listRelations(request.params.arguments);
         case 'get_project_stats':
           return this.getProjectStats(request.params.arguments);
+        case 'semantic_search_facts':
+          return this.semanticSearchFacts(request.params.arguments);
+        case 'find_similar_facts':
+          return this.findSimilarFacts(request.params.arguments);
         default:
           throw new Error(`Tool not found: ${request.params.name}`);
       }
@@ -649,7 +693,7 @@ export class LoreHubServer {
     }
 
     // Create the fact
-    const fact = this.db.createFact({
+    const fact = await this.db.createFact({
       projectId: project.id,
       content: params.content,
       why: params.why,
@@ -1161,6 +1205,107 @@ export class LoreHubServer {
     };
   }
 
+  private async semanticSearchFacts(args: unknown) {
+    const params = SemanticSearchFactsSchema.parse(args);
+    
+    try {
+      // Perform semantic search
+      const results = await this.db.semanticSearchFacts(params.query, {
+        projectId: params.project_path ? this.db.findProjectByPath(params.project_path)?.id : undefined,
+        threshold: params.threshold,
+        limit: params.limit,
+        includeScore: true
+      });
+      
+      // Enrich results with project information
+      const enrichedResults = results.map(fact => {
+        const project = this.db.listProjects().find(p => p.id === fact.projectId);
+        return {
+          ...this.formatFact(fact),
+          similarity: fact.similarity,
+          project: project ? {
+            name: project.name,
+            path: project.path,
+          } : undefined,
+        };
+      });
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              facts: enrichedResults,
+              total: enrichedResults.length,
+              query: params.query,
+              searchType: 'semantic',
+              threshold: params.threshold,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      // Fallback to regular search if semantic search fails
+      console.error('Semantic search failed, falling back to keyword search:', error);
+      return this.searchFacts({
+        query: params.query,
+        project_path: params.project_path,
+        limit: params.limit,
+      });
+    }
+  }
+
+  private async findSimilarFacts(args: unknown) {
+    const params = FindSimilarFactsSchema.parse(args);
+    
+    // Verify the fact exists
+    const fact = this.db.getFactById(params.fact_id);
+    if (!fact) {
+      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    }
+    
+    try {
+      // Find similar facts
+      const similarFacts = await this.db.findSimilarFacts(params.fact_id, {
+        limit: params.limit,
+        threshold: params.threshold
+      });
+      
+      // Enrich results with project information
+      const enrichedResults = similarFacts.map(similarFact => {
+        const project = this.db.listProjects().find(p => p.id === similarFact.projectId);
+        return {
+          ...this.formatFact(similarFact),
+          similarity: similarFact.similarity,
+          project: project ? {
+            name: project.name,
+            path: project.path,
+          } : undefined,
+        };
+      });
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              originalFact: {
+                ...this.formatFact(fact),
+                project: this.db.listProjects().find(p => p.id === fact.projectId)?.name,
+              },
+              similarFacts: enrichedResults,
+              total: enrichedResults.length,
+              threshold: params.threshold,
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error('Finding similar facts failed:', error);
+      throw new Error(`Failed to find similar facts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async getServerInfo() {
     return {
       name: 'lorehub',
@@ -1226,6 +1371,14 @@ export class LoreHubServer {
         name: 'get_project_stats',
         description: 'Get detailed statistics about a project',
       },
+      {
+        name: 'semantic_search_facts',
+        description: 'Search facts using semantic similarity to find conceptually related facts',
+      },
+      {
+        name: 'find_similar_facts',
+        description: 'Find facts similar to a given fact',
+      },
     ];
   }
 
@@ -1271,6 +1424,12 @@ export class LoreHubServer {
       case 'get_project_stats':
         const statsResult = await this.getProjectStats(args);
         return JSON.parse(statsResult.content[0]!.text!);
+      case 'semantic_search_facts':
+        const semanticResult = await this.semanticSearchFacts(args);
+        return JSON.parse(semanticResult.content[0]!.text!);
+      case 'find_similar_facts':
+        const similarResult = await this.findSimilarFacts(args);
+        return JSON.parse(similarResult.content[0]!.text!);
       default:
         throw new Error(`Tool not found: ${name}`);
     }

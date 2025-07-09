@@ -18,10 +18,13 @@ import type {
   CreateRelationInput,
   Relation
 } from '../core/types.js';
+import * as sqliteVec from 'sqlite-vec';
+import { EmbeddingService } from '../core/embeddings.js';
 
 export class Database {
   private sqlite: BetterSqlite3.Database;
   private db: ReturnType<typeof drizzle>;
+  private embeddingService: EmbeddingService;
 
   constructor(dbPath: string) {
     // Ensure directory exists
@@ -32,6 +35,9 @@ export class Database {
     
     this.sqlite = new BetterSqlite3(dbPath);
     
+    // Load sqlite-vec extension
+    this.loadSqliteVec();
+    
     // Configure SQLite for better performance
     this.sqlite.pragma('journal_mode = WAL');
     this.sqlite.pragma('synchronous = NORMAL');
@@ -39,8 +45,21 @@ export class Database {
     
     this.db = drizzle(this.sqlite);
     
+    // Initialize embedding service
+    this.embeddingService = EmbeddingService.getInstance();
+    
     // Run Drizzle migrations
     this.runMigrations();
+  }
+  
+  private loadSqliteVec(): void {
+    try {
+      // Load sqlite-vec extension
+      sqliteVec.load(this.sqlite);
+    } catch (error) {
+      console.error('Failed to load sqlite-vec extension:', error);
+      // Continue without vector support - graceful degradation
+    }
   }
 
   private runMigrations(): void {
@@ -206,7 +225,7 @@ export class Database {
   }
 
   // Fact methods
-  createFact(input: CreateFactInput): Fact {
+  async createFact(input: CreateFactInput): Promise<Fact> {
     const id = input.id || uuidv4();
     const now = new Date();
     
@@ -226,6 +245,12 @@ export class Database {
     };
 
     this.db.insert(facts).values(fact).run();
+    
+    // Generate embedding for the new fact asynchronously
+    // Don't await to avoid blocking fact creation
+    this.generateFactEmbedding(id).catch(error => {
+      console.error(`Failed to generate embedding for new fact ${id}:`, error);
+    });
     
     return this.findFact(id)!;
   }
@@ -364,6 +389,176 @@ export class Database {
       .get();
     
     return result?.count || 0;
+  }
+
+  // Vector/Semantic Search methods
+  async semanticSearchFacts(
+    query: string,
+    options: {
+      projectId?: string;
+      threshold?: number;
+      limit?: number;
+      includeScore?: boolean;
+    } = {}
+  ): Promise<(Fact & { similarity?: number })[]> {
+    try {
+      // Generate embedding for query
+      const queryEmbedding = await this.embeddingService.generateEmbedding(query);
+      
+      // Build the query based on options
+      let sqlQuery = `
+        SELECT f.*, vec_distance_l2(v.embedding, ?) as distance
+        FROM facts f
+        JOIN facts_vec v ON f.id = v.fact_id
+        WHERE 1=1
+      `;
+      
+      const params: any[] = [queryEmbedding];
+      
+      if (options.projectId) {
+        sqlQuery += ` AND f.project_id = ?`;
+        params.push(options.projectId);
+      }
+      
+      // Add threshold filter if specified
+      if (options.threshold !== undefined) {
+        sqlQuery += ` AND vec_distance_l2(v.embedding, ?) < ?`;
+        params.push(queryEmbedding, options.threshold);
+      }
+      
+      sqlQuery += ` ORDER BY distance ASC`;
+      
+      if (options.limit) {
+        sqlQuery += ` LIMIT ?`;
+        params.push(options.limit);
+      }
+      
+      const results = this.sqlite.prepare(sqlQuery).all(...params) as any[];
+      
+      return results.map(row => {
+        const fact = this.dbFactToFact(row);
+        if (options.includeScore) {
+          // Convert distance to similarity score (0-1, where 1 is most similar)
+          // Using a simple inverse distance formula
+          const similarity = 1 / (1 + row.distance);
+          return { ...fact, similarity };
+        }
+        return fact;
+      });
+    } catch (error) {
+      console.error('Semantic search failed:', error);
+      // Fallback to regular search
+      return this.searchFacts(options.projectId || '', query, options.limit);
+    }
+  }
+
+  async findSimilarFacts(
+    factId: string,
+    options: { limit?: number; threshold?: number } = {}
+  ): Promise<(Fact & { similarity: number })[]> {
+    const fact = this.findFact(factId);
+    if (!fact) return [];
+    
+    // Format fact for embedding
+    const factText = this.embeddingService.formatFactForEmbedding({
+      content: fact.content,
+      why: fact.why,
+      tags: fact.tags,
+      type: fact.type
+    });
+    
+    // Search for similar facts, excluding the original
+    const results = await this.semanticSearchFacts(factText, {
+      projectId: fact.projectId,
+      limit: (options.limit || 10) + 1, // Get one extra to exclude self
+      includeScore: true
+    });
+    
+    // Filter out the original fact and apply threshold
+    const threshold = options.threshold || 0;
+    return results
+      .filter(f => f.id !== factId && f.similarity !== undefined && f.similarity >= threshold)
+      .slice(0, options.limit || 10) as (Fact & { similarity: number })[];
+  }
+
+  async generateFactEmbedding(factId: string): Promise<void> {
+    const fact = this.findFact(factId);
+    if (!fact) {
+      throw new Error(`Fact ${factId} not found`);
+    }
+    
+    // Format fact for embedding
+    const factText = this.embeddingService.formatFactForEmbedding({
+      content: fact.content,
+      why: fact.why,
+      tags: fact.tags,
+      type: fact.type
+    });
+    
+    // Generate embedding
+    const embedding = await this.embeddingService.generateEmbedding(factText);
+    
+    // Store embedding
+    try {
+      this.sqlite.prepare(`
+        INSERT OR REPLACE INTO facts_vec (fact_id, embedding)
+        VALUES (?, ?)
+      `).run(factId, embedding);
+      
+      // Mark fact as having embedding
+      this.sqlite.prepare(`
+        UPDATE facts SET embedding_generated = 1 WHERE id = ?
+      `).run(factId);
+    } catch (error) {
+      console.error(`Failed to store embedding for fact ${factId}:`, error);
+      throw error;
+    }
+  }
+
+  async generateMissingEmbeddings(projectId?: string, batchSize: number = 50): Promise<number> {
+    let query = `
+      SELECT * FROM facts 
+      WHERE embedding_generated = 0 OR embedding_generated IS NULL
+    `;
+    
+    const params: any[] = [];
+    if (projectId) {
+      query += ` AND projectId = ?`;
+      params.push(projectId);
+    }
+    
+    query += ` LIMIT ?`;
+    params.push(batchSize);
+    
+    const factsToEmbed = this.sqlite.prepare(query).all(...params) as DbFact[];
+    
+    let count = 0;
+    for (const dbFact of factsToEmbed) {
+      try {
+        await this.generateFactEmbedding(dbFact.id);
+        count++;
+      } catch (error) {
+        console.error(`Failed to generate embedding for fact ${dbFact.id}:`, error);
+      }
+    }
+    
+    return count;
+  }
+
+  // Check if a fact might be a duplicate
+  async checkForDuplicates(
+    content: string,
+    projectId: string,
+    threshold: number = 0.85
+  ): Promise<(Fact & { similarity: number })[]> {
+    const results = await this.semanticSearchFacts(content, {
+      projectId,
+      threshold: 1 - threshold, // Convert similarity to distance threshold
+      limit: 5,
+      includeScore: true
+    });
+    
+    return results.filter(f => f.similarity !== undefined && f.similarity >= threshold) as (Fact & { similarity: number })[];
   }
 
   // Relation methods

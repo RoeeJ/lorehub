@@ -38,7 +38,7 @@ describe('Database', () => {
     expect(found?.id).toBe(project.id);
   });
 
-  it('should create and retrieve facts', () => {
+  it('should create and retrieve facts', async () => {
     const project = db.createProject({
       name: 'test-project',
       path: '/test/path',
@@ -54,7 +54,7 @@ describe('Database', () => {
       },
     };
 
-    const fact = db.createFact(factInput);
+    const fact = await db.createFact(factInput);
     expect(fact.content).toBe('Test fact content');
     expect(fact.status).toBe('active');
 
@@ -63,13 +63,13 @@ describe('Database', () => {
     expect(facts[0]?.id).toBe(fact.id);
   });
 
-  it('should soft delete facts', () => {
+  it('should soft delete facts', async () => {
     const project = db.createProject({
       name: 'test-project',
       path: '/test/path',
     });
 
-    const fact = db.createFact({
+    const fact = await db.createFact({
       projectId: project.id,
       content: 'To be deleted',
       type: 'decision',

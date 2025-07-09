@@ -25,6 +25,7 @@ export function Help({ context }: HelpProps) {
           <Text><Text color="cyan">↑/↓</Text> - Navigate items</Text>
           <Text><Text color="cyan">/</Text> - Filter results (vim-style search)</Text>
           <Text><Text color="cyan">d</Text> - Delete selected fact (soft delete)</Text>
+          <Text><Text color="cyan">s</Text> - Show similar facts</Text>
           <Text><Text color="cyan">Enter</Text> - Select item</Text>
         </Box>
       )}
@@ -55,6 +56,7 @@ export function Help({ context }: HelpProps) {
       <Box marginTop={1} flexDirection="column">
         <Text bold color="yellow">Tips</Text>
         {context === 'list' && <Text>• Current project facts are marked with ⭐</Text>}
+        {context === 'list' && <Text>• Number in parentheses (n≈) shows similar facts count</Text>}
         {context === 'search' && <Text>• Use wildcards: * (any chars) or ? (single char)</Text>}
         {context === 'add' && <Text>• All fields except content are optional</Text>}
         <Text>• Facts are stored globally across all projects</Text>

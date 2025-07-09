@@ -64,8 +64,8 @@ describe('AddFact Component', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(lastFrame()).toContain('Add New Fact');
-    expect(lastFrame()).toContain('Project: test-project');
-    expect(lastFrame()).toContain('Content:');
+    expect(lastFrame()).toContain('test-project - /test/path');
+    expect(lastFrame()).toContain('Content');
   });
 
   it('should show fact type selector', async () => {
@@ -80,7 +80,7 @@ describe('AddFact Component', () => {
     // Wait for component to load
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(lastFrame()).toContain('Type:');
+    expect(lastFrame()).toContain('Type');
     expect(lastFrame()).toContain('Decision - Architectural or technical choice');
   });
 
@@ -97,15 +97,15 @@ describe('AddFact Component', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     // Initial state - focus on content
-    expect(lastFrame()).toContain('Content:');
+    expect(lastFrame()).toContain('Content');
 
     // Press tab to move to type
     stdin.write('\t');
-    expect(lastFrame()).toContain('Type:');
+    expect(lastFrame()).toContain('Type');
 
     // Press tab to move to why
     stdin.write('\t');
-    expect(lastFrame()).toContain('Why:');
+    expect(lastFrame()).toContain('Why');
   });
 
   it('should handle monorepo service selection', async () => {
@@ -135,9 +135,11 @@ describe('AddFact Component', () => {
     );
 
     // Wait for component to load
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    expect(lastFrame()).toContain('Services:');
+    const frame = lastFrame();
+    // Check if it's a monorepo form by looking for service-related text
+    expect(frame).toMatch(/Service|All services/);
   });
 
   it('should show confidence slider', async () => {

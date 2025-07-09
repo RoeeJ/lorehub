@@ -102,3 +102,6 @@ bench/results/
 
 # Local development
 *.local
+
+# LLM tooling
+.claude

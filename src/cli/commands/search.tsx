@@ -10,6 +10,8 @@ interface SearchOptions {
   service?: string;
   projectPath?: string;
   currentProjectOnly?: boolean;
+  semantic?: boolean;
+  threshold?: number;
 }
 
 export async function renderSearch(options: SearchOptions): Promise<void> {
@@ -46,7 +48,21 @@ export async function renderSearch(options: SearchOptions): Promise<void> {
       
       // Search selected projects
       for (const proj of projectsToSearch) {
-        const projectFacts = db.searchFacts(proj.id, options.query);
+        let projectFacts: any[];
+        
+        if (options.semantic) {
+          // Use semantic search
+          // Note: semanticSearchFacts expects distance threshold, not similarity
+          // Don't pass threshold to get all results, we'll filter by similarity later
+          projectFacts = await db.semanticSearchFacts(options.query, {
+            projectId: proj.id,
+            includeScore: true
+          });
+        } else {
+          // Use traditional keyword search
+          projectFacts = db.searchFacts(proj.id, options.query);
+        }
+        
         // Add project info to each fact for display
         results.push(...projectFacts.map(f => ({ 
           ...f, 
@@ -64,6 +80,12 @@ export async function renderSearch(options: SearchOptions): Promise<void> {
       if (options.service) {
         results = results.filter(f => f.services.includes(options.service));
       }
+      
+      // Apply similarity threshold filter for semantic search
+      if (options.semantic && options.threshold !== undefined) {
+        const threshold = options.threshold;
+        results = results.filter(f => f.similarity !== undefined && f.similarity >= threshold);
+      }
 
       // Sort by current project first, then by creation date descending
       results.sort((a, b) => {
@@ -79,13 +101,17 @@ export async function renderSearch(options: SearchOptions): Promise<void> {
         if (options.type) console.log(`Filter: type = ${options.type}`);
         if (options.service) console.log(`Filter: service = ${options.service}`);
       } else {
-        console.log(`\nFound ${results.length} fact${results.length === 1 ? '' : 's'} matching "${options.query}":\n`);
+        const searchMode = options.semantic ? 'semantic' : 'keyword';
+        console.log(`\nFound ${results.length} fact${results.length === 1 ? '' : 's'} matching "${options.query}" (${searchMode} search):\n`);
         results.forEach((fact, index) => {
           const projectIndicator = fact.isCurrentProject ? ' ⭐' : '';
           console.log(`${index + 1}. [${fact.type}] ${fact.content}`);
           console.log(`   Project: ${fact.projectName}${projectIndicator} (${fact.projectPath})`);
           if (fact.why) {
             console.log(`   Why: ${fact.why}`);
+          }
+          if (options.semantic && fact.similarity !== undefined) {
+            console.log(`   Similarity: ${(fact.similarity * 100).toFixed(1)}%`);
           }
           console.log(`   Confidence: ${fact.confidence}%`);
           console.log(`   Created: ${fact.createdAt.toLocaleString()}`);

@@ -69,6 +69,8 @@ export function AddFact({
   const [servicesText, setServicesText] = useState(initialServices.join(', '));
   const [tagsText, setTagsText] = useState(initialTags.join(', '));
   const [confidence, setConfidence] = useState(initialConfidence);
+  const [duplicates, setDuplicates] = useState<Array<{ content: string; similarity: number }>>([]);
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
   // Load or create project
   useEffect(() => {
@@ -114,6 +116,25 @@ export function AddFact({
     setIsSubmitting(true);
     
     try {
+      // Check for duplicates before creating
+      if (!showDuplicateWarning) {
+        const potentialDuplicates = await db.checkForDuplicates(
+          content.trim(),
+          project.id,
+          0.85 // 85% similarity threshold
+        );
+        
+        if (potentialDuplicates.length > 0) {
+          setDuplicates(potentialDuplicates.map(d => ({
+            content: d.content,
+            similarity: d.similarity
+          })));
+          setShowDuplicateWarning(true);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      
       const factInput: CreateFactInput = {
         projectId: project.id,
         content: content.trim(),
@@ -147,6 +168,18 @@ export function AddFact({
   useInput((input, key) => {
     // Ignore all input during submission or after success
     if (isSubmitting || success) {
+      return;
+    }
+    
+    // Handle duplicate warning response
+    if (showDuplicateWarning) {
+      if (input.toLowerCase() === 'y') {
+        setShowDuplicateWarning(false);
+        handleSubmit(); // Continue with submission
+      } else if (input.toLowerCase() === 'n' || key.escape) {
+        setShowDuplicateWarning(false);
+        setDuplicates([]);
+      }
       return;
     }
     
@@ -229,6 +262,29 @@ export function AddFact({
         </Box>
         <Box marginTop={1}>
           <Text dimColor>Press ? or Esc to return</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Show duplicate warning if needed
+  if (showDuplicateWarning && duplicates.length > 0) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text bold color="yellow">⚠ Potential Duplicate Facts Found</Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text>The following existing facts are similar to your new fact:</Text>
+          <Box marginTop={1} flexDirection="column">
+            {duplicates.slice(0, 3).map((dup, i) => (
+              <Box key={i} marginBottom={1}>
+                <Text>• [{Math.round(dup.similarity * 100)}% similar] {dup.content}</Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+        <Box marginTop={1}>
+          <Text>Do you want to continue adding this fact anyway?</Text>
+          <Text dimColor>Press Y to continue, N to cancel</Text>
         </Box>
       </Box>
     );

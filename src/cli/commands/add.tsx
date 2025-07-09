@@ -35,7 +35,22 @@ export async function renderAddFact(options: AddOptions): Promise<void> {
         });
       }
       
-      const fact = db.createFact({
+      // Check for duplicates before creating
+      const potentialDuplicates = await db.checkForDuplicates(
+        options.initialContent,
+        project.id,
+        0.85
+      );
+      
+      if (potentialDuplicates.length > 0) {
+        console.log('\n⚠ Warning: Similar facts already exist:');
+        potentialDuplicates.slice(0, 3).forEach((dup, i) => {
+          console.log(`  ${i + 1}. [${Math.round(dup.similarity * 100)}% similar] ${dup.content}`);
+        });
+        console.log('\nAdding fact anyway in non-interactive mode...\n');
+      }
+      
+      const fact = await db.createFact({
         projectId: project.id,
         content: options.initialContent,
         type: options.type || 'decision',
