@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,3 +24,19 @@ if (existsSync(drizzleSource)) {
 } else {
   console.warn('⚠ No drizzle migrations found');
 }
+
+// Make bin files executable
+const binFiles = [
+  join(projectRoot, 'dist', 'index.js'),
+  join(projectRoot, 'dist', 'mcp', 'index.js')
+];
+
+console.log('Setting executable permissions on bin files...');
+binFiles.forEach(file => {
+  if (existsSync(file)) {
+    chmodSync(file, 0o755);
+    console.log(`✓ Made ${file} executable`);
+  } else {
+    console.warn(`⚠ Bin file not found: ${file}`);
+  }
+});
