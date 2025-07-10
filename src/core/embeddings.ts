@@ -1,17 +1,78 @@
 import { pipeline } from '@xenova/transformers';
+import { ConfigManager } from './config.js';
+
+export interface EmbeddingConfig {
+  model: string;
+  dimensions: number;
+}
+
+export const EMBEDDING_MODELS: Record<string, EmbeddingConfig> = {
+  'all-MiniLM-L6-v2': {
+    model: 'Xenova/all-MiniLM-L6-v2',
+    dimensions: 384
+  },
+  'all-mpnet-base-v2': {
+    model: 'Xenova/all-mpnet-base-v2',
+    dimensions: 768
+  },
+  'gte-small': {
+    model: 'Xenova/gte-small',
+    dimensions: 384
+  }
+};
 
 export class EmbeddingService {
   private static instance: EmbeddingService;
   private embedder: any = null;
   private initPromise: Promise<void> | null = null;
+  private currentModel: string;
   
-  private constructor() {}
+  private constructor() {
+    const config = ConfigManager.getInstance();
+    // Use config first, then env var, then default
+    this.currentModel = config.get('embeddingModel') || 
+                       process.env.LOREHUB_EMBEDDING_MODEL || 
+                       'all-mpnet-base-v2';
+  }
+  
+  async switchModel(modelName: string): Promise<void> {
+    if (!EMBEDDING_MODELS[modelName]) {
+      throw new Error(`Unknown embedding model: ${modelName}`);
+    }
+    
+    // Reset the embedder to force re-initialization
+    this.embedder = null;
+    this.initPromise = null;
+    this.currentModel = modelName;
+    
+    // Save to config
+    const config = ConfigManager.getInstance();
+    config.update({
+      embeddingModel: modelName,
+      embeddingDimensions: EMBEDDING_MODELS[modelName].dimensions
+    });
+    
+    // Re-initialize with new model
+    await this.initialize();
+  }
   
   static getInstance(): EmbeddingService {
     if (!EmbeddingService.instance) {
       EmbeddingService.instance = new EmbeddingService();
     }
     return EmbeddingService.instance;
+  }
+  
+  getModelConfig(): EmbeddingConfig {
+    const config = EMBEDDING_MODELS[this.currentModel];
+    if (!config) {
+      throw new Error(`Unknown embedding model: ${this.currentModel}`);
+    }
+    return config;
+  }
+  
+  getCurrentModel(): string {
+    return this.currentModel;
   }
   
   private async initialize(): Promise<void> {
@@ -24,10 +85,11 @@ export class EmbeddingService {
     }
     
     this.initPromise = (async () => {
-      // Use the recommended model for semantic search
+      const config = this.getModelConfig();
+      // Use the configured model for semantic search
       this.embedder = await pipeline(
         'feature-extraction',
-        'Xenova/all-MiniLM-L6-v2'
+        config.model
       );
     })();
     
@@ -73,32 +135,32 @@ export class EmbeddingService {
     return embeddings;
   }
   
-  // Combine fact content, why, and tags for better semantic representation
-  formatFactForEmbedding(fact: {
+  // Combine lore content, why, and sigils for better semantic representation
+  formatLoreForEmbedding(lore: {
     content: string;
     why?: string;
-    tags?: string[];
+    sigils?: string[];
     type?: string;
   }): string {
-    const parts = [fact.content];
+    const parts = [lore.content];
     
-    if (fact.why) {
-      parts.push(`Context: ${fact.why}`);
+    if (lore.why) {
+      parts.push(`Context: ${lore.why}`);
     }
     
-    if (fact.type) {
-      parts.push(`Type: ${fact.type}`);
+    if (lore.type) {
+      parts.push(`Type: ${lore.type}`);
     }
     
-    if (fact.tags && fact.tags.length > 0) {
-      parts.push(`Tags: ${fact.tags.join(', ')}`);
+    if (lore.sigils && lore.sigils.length > 0) {
+      parts.push(`Sigils: ${lore.sigils.join(', ')}`);
     }
     
     return parts.join(' ');
   }
   
-  // Get embedding dimension (all-MiniLM-L6-v2 uses 384)
+  // Get embedding dimension based on current model
   get dimension(): number {
-    return 384;
+    return this.getModelConfig().dimensions;
   }
 }

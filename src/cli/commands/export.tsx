@@ -8,12 +8,12 @@ import fs from 'fs/promises';
 import path from 'path';
 
 interface ExportProps {
-  projectPath?: string;
+  realmPath?: string;
   outputFile: string;
   format: 'json' | 'markdown';
 }
 
-function Export({ projectPath, outputFile, format }: ExportProps) {
+function Export({ realmPath, outputFile, format }: ExportProps) {
   const [status, setStatus] = useState<'loading' | 'exporting' | 'success' | 'error'>('loading');
   const [error, setError] = useState<Error | null>(null);
   const [exportedCount, setExportedCount] = useState(0);
@@ -25,27 +25,27 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
         const dbPath = getDbPath();
         const db = new Database(dbPath);
         
-        // Get facts to export
-        let facts = [];
-        let projects = [];
+        // Get lores to export
+        let lores = [];
+        let realms = [];
         
-        if (projectPath) {
-          const project = db.findProjectByPath(projectPath);
-          if (!project) {
-            throw new Error(`Project not found at path: ${projectPath}`);
+        if (realmPath) {
+          const realm = db.findRealmByPath(realmPath);
+          if (!realm) {
+            throw new Error(`Realm not found at path: ${realmPath}`);
           }
-          projects = [project];
-          facts = db.listFactsByProject(project.id);
+          realms = [realm];
+          lores = db.listLoresByRealm(realm.id);
         } else {
-          // Export all facts from all projects
-          projects = db.listProjects();
-          for (const project of projects) {
-            const projectFacts = db.listFactsByProject(project.id);
-            facts.push(...projectFacts.map(f => ({ ...f, projectId: project.id })));
+          // Export all lores from all realms
+          realms = db.listRealms();
+          for (const realm of realms) {
+            const realmLores = db.listLoresByRealm(realm.id);
+            lores.push(...realmLores.map(f => ({ ...f, realmId: realm.id })));
           }
         }
 
-        setTotalCount(facts.length);
+        setTotalCount(lores.length);
         setStatus('exporting');
 
         // Format data based on requested format
@@ -55,27 +55,27 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
           const exportData = {
             version: '1.0',
             exportDate: new Date().toISOString(),
-            projects: projects.map(p => ({
+            realms: realms.map(p => ({
               id: p.id,
               name: p.name,
               path: p.path,
               gitRemote: p.gitRemote,
               isMonorepo: p.isMonorepo,
-              services: p.services,
+              provinces: p.provinces,
             })),
-            facts: facts.map((f, index) => {
+            lores: lores.map((f, index) => {
               setExportedCount(index + 1);
               return {
                 id: f.id,
-                projectId: f.projectId,
+                realmId: f.realmId,
                 content: f.content,
                 type: f.type,
                 status: f.status,
                 confidence: f.confidence,
                 why: f.why,
-                services: f.services,
-                tags: f.tags,
-                source: f.source,
+                provinces: f.provinces,
+                sigils: f.sigils,
+                origin: f.origin,
                 createdAt: f.createdAt.toISOString(),
                 updatedAt: f.updatedAt.toISOString(),
               };
@@ -87,25 +87,25 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
           output = '# LoreHub Export\n\n';
           output += `Export Date: ${new Date().toLocaleString()}\n\n`;
           
-          for (const project of projects) {
-            const projectFacts = facts.filter(f => f.projectId === project.id);
+          for (const realm of realms) {
+            const realmLores = lores.filter(f => (f as any).realmId === realm.id || f.realmId === realm.id);
             
-            if (projectFacts.length === 0) continue;
+            if (realmLores.length === 0) continue;
             
-            output += `## Project: ${project.name}\n\n`;
-            output += `Path: ${project.path}\n`;
-            if (project.gitRemote) output += `Git: ${project.gitRemote}\n`;
+            output += `## Realm: ${realm.name}\n\n`;
+            output += `Path: ${realm.path}\n`;
+            if (realm.gitRemote) output += `Git: ${realm.gitRemote}\n`;
             output += '\n';
             
-            for (const fact of projectFacts) {
+            for (const lore of realmLores) {
               setExportedCount(prev => prev + 1);
-              output += `### ${fact.type.toUpperCase()}: ${fact.content}\n\n`;
-              if (fact.why) output += `**Why**: ${fact.why}\n\n`;
-              output += `- **Status**: ${fact.status}\n`;
-              output += `- **Confidence**: ${fact.confidence}%\n`;
-              output += `- **Created**: ${fact.createdAt.toLocaleDateString()}\n`;
-              if (fact.tags.length > 0) output += `- **Tags**: ${fact.tags.join(', ')}\n`;
-              if (fact.services.length > 0) output += `- **Services**: ${fact.services.join(', ')}\n`;
+              output += `### ${lore.type.toUpperCase()}: ${lore.content}\n\n`;
+              if (lore.why) output += `**Why**: ${lore.why}\n\n`;
+              output += `- **Status**: ${lore.status}\n`;
+              output += `- **Confidence**: ${lore.confidence}%\n`;
+              output += `- **Created**: ${lore.createdAt.toLocaleDateString()}\n`;
+              if (lore.sigils.length > 0) output += `- **Sigils**: ${lore.sigils.join(', ')}\n`;
+              if (lore.provinces.length > 0) output += `- **Provinces**: ${lore.provinces.join(', ')}\n`;
               output += '\n---\n\n';
             }
           }
@@ -124,16 +124,16 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
     }
 
     performExport();
-  }, [projectPath, outputFile, format]);
+  }, [realmPath, outputFile, format]);
 
   if (status === 'loading') {
-    return <Progress message="Loading facts..." />;
+    return <Progress message="Loading lores..." />;
   }
 
   if (status === 'exporting') {
     return (
       <Progress 
-        message="Exporting facts..." 
+        message="Exporting lores..." 
         current={exportedCount} 
         total={totalCount}
       />
@@ -147,7 +147,7 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
         context="Export"
         suggestions={[
           'Check if the output path is writable',
-          'Ensure the project path is correct (if specified)',
+          'Ensure the realm path is correct (if specified)',
         ]}
       />
     );
@@ -157,7 +157,7 @@ function Export({ projectPath, outputFile, format }: ExportProps) {
     return (
       <Box flexDirection="column">
         <Text color="green" bold>✓ Export completed successfully!</Text>
-        <Text>Exported {exportedCount} facts to: {path.resolve(outputFile)}</Text>
+        <Text>Exported {exportedCount} lores to: {path.resolve(outputFile)}</Text>
         <Text dimColor>Format: {format}</Text>
       </Box>
     );

@@ -6,14 +6,77 @@
       "idx": 0,
       "version": "6",
       "when": 1752038466479,
-      "tag": "0000_warm_patch",
+      "tag": "0000_create_realms",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
       "when": 1752038466480,
-      "tag": "0001_add_vector_support",
+      "tag": "0001_create_lores",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1752038466481,
+      "tag": "0002_create_lore_relations",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1752038466482,
+      "tag": "0003_create_realms_path_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1752038466483,
+      "tag": "0004_create_lores_realm_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1752038466484,
+      "tag": "0005_create_lores_type_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1752038466485,
+      "tag": "0006_create_lores_status_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1752038466486,
+      "tag": "0007_create_lores_content_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1752038466487,
+      "tag": "0008_create_relations_from_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1752038466488,
+      "tag": "0009_create_relations_to_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1752038466489,
+      "tag": "0010_create_lores_vec_table",
       "breakpoints": true
     }
   ]

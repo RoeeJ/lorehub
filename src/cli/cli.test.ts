@@ -7,8 +7,8 @@ import { Database } from '../db/database.js';
 vi.mock('../db/database.js');
 
 // Mock Ink components
-vi.mock('./components/AddFact.js', () => ({
-  AddFact: vi.fn(() => null)
+vi.mock('./components/AddLore.js', () => ({
+  AddLore: vi.fn(() => null),
 }));
 
 // Mock ink render to prevent process.exit issues
@@ -23,20 +23,20 @@ vi.mock('ink', () => ({
   Text: vi.fn(),
 }));
 
-// Mock getProjectInfo
-vi.mock('./utils/project.js', () => ({
-  getProjectInfo: vi.fn().mockResolvedValue({
-    name: 'test-project',
+// Mock getRealmInfo
+vi.mock('./utils/realm.js', () => ({
+  getRealmInfo: vi.fn().mockResolvedValue({
+    name: 'test-realm',
     path: '/test/path',
     gitRemote: null,
     isMonorepo: false,
-    services: [],
+    provinces: [],
   }),
 }));
 
-// Mock renderAddFact
+// Mock renderAddLore
 vi.mock('./commands/add.js', () => ({
-  renderAddFact: vi.fn().mockResolvedValue(undefined),
+  renderAddLore: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('CLI', () => {
@@ -50,16 +50,16 @@ describe('CLI', () => {
     // Mock console
     consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    
+
     // Mock process.exit
     processExit = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit');
     });
-    
+
     // Create mock database
     mockDb = new Database(':memory:');
     vi.mocked(Database).mockReturnValue(mockDb);
-    
+
     // Create CLI instance
     cli = createCLI();
   });
@@ -79,38 +79,26 @@ describe('CLI', () => {
     });
 
     it('should have add command', () => {
-      const addCommand = cli.commands.find(cmd => cmd.name() === 'add');
+      const addCommand = cli.commands.find((cmd) => cmd.name() === 'add');
       expect(addCommand).toBeDefined();
-      expect(addCommand?.description()).toContain('Add a new fact');
-    });
-
-    it('should have search command', () => {
-      const searchCommand = cli.commands.find(cmd => cmd.name() === 'search');
-      expect(searchCommand).toBeDefined();
-      expect(searchCommand?.description()).toContain('Search facts');
-    });
-
-    it('should have list command', () => {
-      const listCommand = cli.commands.find(cmd => cmd.name() === 'list');
-      expect(listCommand).toBeDefined();
-      expect(listCommand?.description()).toContain('List facts');
+      expect(addCommand?.description()).toContain('Add a new lore');
     });
   });
 
   describe('add command', () => {
-    it('should handle inline fact creation', async () => {
-      const { renderAddFact } = await import('./commands/add.js');
-      
-      // Mock renderAddFact to simulate successful creation
-      vi.mocked(renderAddFact).mockImplementation(async (options) => {
+    it('should handle inline lore creation', async () => {
+      const { renderAddLore } = await import('./commands/add.js');
+
+      // Mock renderAddLore to simulate successful creation
+      vi.mocked(renderAddLore).mockImplementation(async (options: any) => {
         if (options.initialContent && !process.stdin.isTTY) {
-          console.log('✓ Fact added successfully');
+          console.log('✓ Lore added successfully');
         }
       });
 
       await cli.parseAsync(['node', 'lh', 'add', 'Use Redis for caching']);
 
-      expect(renderAddFact).toHaveBeenCalledWith(
+      expect(renderAddLore).toHaveBeenCalledWith(
         expect.objectContaining({
           initialContent: 'Use Redis for caching',
         })
@@ -121,12 +109,12 @@ describe('CLI', () => {
     it.skip('should launch interactive mode when no content provided', async () => {
       // Create a new CLI instance to ensure clean state
       const testCli = createCLI();
-      
-      const { renderAddFact } = await import('./commands/add.js');
-      
+
+      const { renderAddLore } = await import('./commands/add.js');
+
       // Reset and configure the mock
-      vi.mocked(renderAddFact).mockClear();
-      vi.mocked(renderAddFact).mockResolvedValue(undefined);
+      vi.mocked(renderAddLore).mockClear();
+      vi.mocked(renderAddLore).mockResolvedValue(undefined);
 
       try {
         await testCli.parseAsync(['node', 'lh', 'add']);
@@ -134,7 +122,7 @@ describe('CLI', () => {
         // May throw due to process.exit
       }
 
-      expect(renderAddFact).toHaveBeenCalledWith(
+      expect(renderAddLore).toHaveBeenCalledWith(
         expect.objectContaining({
           initialContent: '',
         })
@@ -142,11 +130,11 @@ describe('CLI', () => {
     });
 
     it('should handle errors gracefully', async () => {
-      const { renderAddFact } = await import('./commands/add.js');
-      vi.mocked(renderAddFact).mockRejectedValue(new Error('Database error'));
+      const { renderAddLore } = await import('./commands/add.js');
+      vi.mocked(renderAddLore).mockRejectedValue(new Error('Database error'));
 
       try {
-        await cli.parseAsync(['node', 'lh', 'add', 'Test fact']);
+        await cli.parseAsync(['node', 'lh', 'add', 'Test lore']);
       } catch (error) {
         // Expected to throw due to process.exit
       }

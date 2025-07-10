@@ -4,50 +4,50 @@ import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import { Help } from './Help.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
-import { SimilarFactsView } from './SimilarFactsView.js';
+import { SimilarLoresView } from './SimilarLoresView.js';
 import { TruncatedText } from './TruncatedText.js';
 import { AlternativeScreenView } from './AlternativeScreenView.js';
 import { useTerminalDimensions } from '../hooks/useTerminalDimensions.js';
 import type { Database } from '../../db/database.js';
-import type { Fact, FactType } from '../../core/types.js';
+import type { Lore, LoreType } from '../../core/types.js';
 
-interface FactsViewProps {
+interface LoresViewProps {
   db: Database;
-  projectPath: string;
+  realmPath: string;
   // Search-specific props
   initialQuery?: string;
   // Filter props
   type?: string;
-  service?: string;
+  province?: string;
   limit?: number;
-  filterProjectPath?: string;
-  currentProjectOnly?: boolean;
+  filterRealmPath?: string;
+  currentRealmOnly?: boolean;
 }
 
-export function FactsView({
+export function LoresView({
   db,
-  projectPath,
+  realmPath,
   initialQuery = '',
   type,
-  service,
+  province,
   limit = 100,
-  filterProjectPath,
-  currentProjectOnly,
-}: FactsViewProps) {
+  filterRealmPath,
+  currentRealmOnly,
+}: LoresViewProps) {
   const { exit } = useApp();
   const { columns, rows } = useTerminalDimensions();
-  const [facts, setFacts] = useState<Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
+  const [lores, setLores] = useState<Array<Lore & { realmName: string; realmPath: string; isCurrentRealm: boolean }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filteredFacts, setFilteredFacts] = useState<Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
+  const [filteredLores, setFilteredLores] = useState<Array<Lore & { realmName: string; realmPath: string; isCurrentRealm: boolean }>>([]);
   const [showHelp, setShowHelp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
-  const [similarFactsCounts, setSimilarFactsCounts] = useState<Map<string, number>>(new Map());
+  const [similarLoresCounts, setSimilarLoresCounts] = useState<Map<string, number>>(new Map());
   const [loadingSimilarCounts, setLoadingSimilarCounts] = useState(false);
-  const [showSimilarFacts, setShowSimilarFacts] = useState(false);
+  const [showSimilarLores, setShowSimilarLores] = useState(false);
 
   useInput((input, key) => {
     if (showHelp) {
@@ -66,17 +66,17 @@ export function FactsView({
       if (key.escape) {
         setIsSearching(false);
         setSearchTerm('');
-        setFilteredFacts(facts);
+        setFilteredLores(lores);
       } else if (key.return) {
         setIsSearching(false);
       } else if (key.backspace || key.delete) {
         const newSearchTerm = searchTerm.slice(0, -1);
         setSearchTerm(newSearchTerm);
-        filterFacts(newSearchTerm);
+        filterLores(newSearchTerm);
       } else if (input && input.length === 1 && !key.ctrl && !key.meta) {
         const newSearchTerm = searchTerm + input;
         setSearchTerm(newSearchTerm);
-        filterFacts(newSearchTerm);
+        filterLores(newSearchTerm);
       }
     } else {
       if (input === 'q' || key.escape) {
@@ -86,79 +86,79 @@ export function FactsView({
         setSearchTerm('');
       } else if (input === '?') {
         setShowHelp(true);
-      } else if (input === 'd' && filteredFacts.length > 0) {
+      } else if (input === 'd' && filteredLores.length > 0) {
         setShowDeleteConfirm(true);
-      } else if (input === 's' && filteredFacts.length > 0) {
-        setShowSimilarFacts(true);
+      } else if (input === 's' && filteredLores.length > 0) {
+        setShowSimilarLores(true);
       }
     }
   });
 
-  const filterFacts = (term: string) => {
+  const filterLores = (term: string) => {
     if (!term) {
-      setFilteredFacts(facts);
+      setFilteredLores(lores);
       return;
     }
     
     const lowerTerm = term.toLowerCase();
-    const filtered = facts.filter(fact => 
-      fact.content.toLowerCase().includes(lowerTerm) ||
-      fact.type.toLowerCase().includes(lowerTerm) ||
-      fact.tags.some(tag => tag.toLowerCase().includes(lowerTerm)) ||
-      fact.projectName.toLowerCase().includes(lowerTerm)
+    const filtered = lores.filter(lore => 
+      lore.content.toLowerCase().includes(lowerTerm) ||
+      lore.type.toLowerCase().includes(lowerTerm) ||
+      lore.sigils.some((sigil: string) => sigil.toLowerCase().includes(lowerTerm)) ||
+      lore.realmName.toLowerCase().includes(lowerTerm)
     );
     
-    setFilteredFacts(filtered);
+    setFilteredLores(filtered);
     setSelectedIndex(0);
   };
 
   useEffect(() => {
-    const currentProject = db.findProjectByPath(projectPath);
-    const projects = db.listProjects();
+    const currentRealm = db.findRealmByPath(realmPath);
+    const realms = db.listRealms();
     
-    // Filter projects based on options
-    let projectsToSearch = projects;
+    // Filter realms based on options
+    let realmsToSearch = realms;
     
-    if (currentProjectOnly) {
-      if (!currentProject) {
-        setFacts([]);
+    if (currentRealmOnly) {
+      if (!currentRealm) {
+        setLores([]);
         setLoading(false);
         return;
       }
-      projectsToSearch = [currentProject];
-    } else if (filterProjectPath) {
-      const specificProject = db.findProjectByPath(filterProjectPath);
-      if (!specificProject) {
-        setFacts([]);
+      realmsToSearch = [currentRealm];
+    } else if (filterRealmPath) {
+      const specificRealm = db.findRealmByPath(filterRealmPath);
+      if (!specificRealm) {
+        setLores([]);
         setLoading(false);
         return;
       }
-      projectsToSearch = [specificProject];
+      realmsToSearch = [specificRealm];
     }
 
-    let results: Array<Fact & { projectName: string; projectPath: string; isCurrentProject: boolean }> = [];
+    let results: Array<Lore & { realmName: string; realmPath: string; isCurrentRealm: boolean }> = [];
     
-    // Get facts from selected projects
-    for (const proj of projectsToSearch) {
-      let projectFacts: Fact[] = [];
+    // Get lores from selected realms
+    for (const proj of realmsToSearch) {
+      let realmLores: Lore[] = [];
       
       if (initialQuery) {
         // Search mode
-        projectFacts = db.searchFacts(proj.id, initialQuery);
+        realmLores = db.searchLores(proj.id, initialQuery);
       } else if (type) {
-        projectFacts = db.listFactsByType(proj.id, type as FactType);
-      } else if (service) {
-        projectFacts = db.listFactsByService(proj.id, service);
+        realmLores = db.listLoresByType(proj.id, type as LoreType);
+      } else if (province) {
+        realmLores = db.listLoresByProvince(proj.id, province);
       } else {
-        projectFacts = db.listFactsByProject(proj.id);
+        realmLores = db.listLoresByRealm(proj.id);
       }
       
-      // Add project info to each fact
-      results.push(...projectFacts.map(f => ({
+      // Add realm info to each lore
+      results.push(...realmLores.map(f => ({
         ...f,
-        projectName: proj.name,
-        projectPath: proj.path,
-        isCurrentProject: currentProject?.id === proj.id
+        realmName: proj.name,
+        realmPath: proj.path,
+        isCurrentRealm: currentRealm?.id === proj.id
       })));
     }
 
@@ -167,18 +167,18 @@ export function FactsView({
       results = results.filter(f => f.type === type);
     }
     
-    if (initialQuery && service) {
-      results = results.filter(f => f.services.includes(service));
+    if (initialQuery && province) {
+      results = results.filter(f => f.provinces.includes(province));
     }
 
-    // Filter out archived facts unless specifically requested
+    // Filter out archived lores unless specifically requested
     results = results.filter(f => f.status !== 'archived');
 
-    // Sort by current project first, then by date
+    // Sort by current realm first, then by date
     results.sort((a, b) => {
-      // Prioritize current project
-      if (a.isCurrentProject && !b.isCurrentProject) return -1;
-      if (!a.isCurrentProject && b.isCurrentProject) return 1;
+      // Prioritize current realm
+      if (a.isCurrentRealm && !b.isCurrentRealm) return -1;
+      if (!a.isCurrentRealm && b.isCurrentRealm) return 1;
       // Then by date
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
@@ -188,62 +188,62 @@ export function FactsView({
       results = results.slice(0, limit);
     }
     
-    setFacts(results);
-    setFilteredFacts(results);
+    setLores(results);
+    setFilteredLores(results);
     setLoading(false);
-  }, [db, projectPath, initialQuery, type, service, limit, filterProjectPath, currentProjectOnly]);
+  }, [db, realmPath, initialQuery, type, province, limit, filterRealmPath, currentRealmOnly]);
 
-  // Load similar facts counts
+  // Load similar lores counts
   useEffect(() => {
     const loadSimilarCounts = async () => {
-      if (facts.length === 0) return;
+      if (lores.length === 0) return;
       
       setLoadingSimilarCounts(true);
       const counts = new Map<string, number>();
       
       // Load counts in batches to avoid overwhelming the system
       const batchSize = 10;
-      for (let i = 0; i < facts.length && i < limit; i += batchSize) {
-        const batch = facts.slice(i, i + batchSize);
+      for (let i = 0; i < lores.length && i < limit; i += batchSize) {
+        const batch = lores.slice(i, i + batchSize);
         await Promise.all(
-          batch.map(async (fact) => {
+          batch.map(async (lore) => {
             try {
-              const similar = await db.findSimilarFacts(fact.id, { 
+              const similar = await db.findSimilarLores(lore.id, { 
                 limit: 10, 
                 threshold: 0.5 
               });
-              counts.set(fact.id, similar.length);
+              counts.set(lore.id, similar.length);
             } catch (error) {
-              counts.set(fact.id, 0);
+              counts.set(lore.id, 0);
             }
           })
         );
       }
       
-      setSimilarFactsCounts(counts);
+      setSimilarLoresCounts(counts);
       setLoadingSimilarCounts(false);
     };
 
     loadSimilarCounts();
-  }, [facts, db, limit]);
+  }, [lores, db, limit]);
 
   if (loading) {
-    return <Text>Loading facts...</Text>;
+    return <Text>Loading lores...</Text>;
   }
 
-  if (facts.length === 0) {
+  if (lores.length === 0) {
     return (
       <Box flexDirection="column">
         <Text color="yellow">
           {initialQuery 
-            ? `No facts found matching "${initialQuery}"`
-            : 'No facts found'}
+            ? `No lores found matching "${initialQuery}"`
+            : 'No lores found'}
         </Text>
         {type && <Text dimColor>Filter: type = {type}</Text>}
-        {service && <Text dimColor>Filter: service = {service}</Text>}
+        {province && <Text dimColor>Filter: province = {province}</Text>}
         {!initialQuery && (
           <Box marginTop={1}>
-            <Text dimColor>Try adding facts with: lh add "Your fact here"</Text>
+            <Text dimColor>Try adding lores with: lh add "Your lore here"</Text>
           </Box>
         )}
       </Box>
@@ -255,38 +255,38 @@ export function FactsView({
   const footerHeight = 2;
   const contentHeight = rows - headerHeight - footerHeight - 1; // -1 for padding
   
-  // Split width: 60% for facts list, 40% for details on wide screens
+  // Split width: 60% for lores list, 40% for details on wide screens
   // On narrow screens, use 50/50 split
-  const factsWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
-  const detailsWidth = columns - factsWidth - 3; // -3 for margins and borders
+  const loresWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
+  const detailsWidth = columns - loresWidth - 3; // -3 for margins and borders
 
-  const items = filteredFacts.map((fact, index) => {
-    const typeStr = `[${fact.type.substring(0, 3).toUpperCase()}]`;
-    const similarCount = similarFactsCounts.get(fact.id) || 0;
+  const items = filteredLores.map((lore, index) => {
+    const typeStr = `[${lore.type.substring(0, 3).toUpperCase()}]`;
+    const similarCount = similarLoresCounts.get(lore.id) || 0;
     
     // Use fixed-width formatting
-    // • for current project (instead of star for predictable width)
+    // • for current realm (instead of star for predictable width)
     // Fixed width similarity count (3 chars + ≈)
-    const projectMarker = fact.isCurrentProject ? '•' : ' ';
+    const realmMarker = lore.isCurrentRealm ? '•' : ' ';
     const similarStr = similarCount > 0 ? `${similarCount.toString().padStart(3)}≈` : '    ';
     
     // Calculate available width for content
-    // Account for: project marker (1), space (1), similar count (4), space (1), type (5), space (1)
+    // Account for: realm marker (1), space (1), similar count (4), space (1), type (5), space (1)
     const prefixLength = 1 + 1 + 4 + 1 + 5 + 1;
-    const availableWidth = factsWidth - prefixLength - 4; // -4 for padding/margins
+    const availableWidth = loresWidth - prefixLength - 4; // -4 for padding/margins
     const contentMaxLength = Math.max(20, availableWidth); // minimum 20 chars
     
-    const content = fact.content.length > contentMaxLength 
-      ? fact.content.substring(0, contentMaxLength - 3) + '...' 
-      : fact.content;
+    const content = lore.content.length > contentMaxLength 
+      ? lore.content.substring(0, contentMaxLength - 3) + '...' 
+      : lore.content;
     
     return {
-      label: `${projectMarker} ${similarStr} ${typeStr} ${content}`,
+      label: `${realmMarker} ${similarStr} ${typeStr} ${content}`,
       value: index,
     };
   });
 
-  const selectedFact = filteredFacts[selectedIndex];
+  const selectedLore = filteredLores[selectedIndex];
 
   // Handle selection changes
   const handleSelect = (item: { label: string; value: number }) => {
@@ -294,14 +294,14 @@ export function FactsView({
   };
 
   const handleDelete = () => {
-    const factToDelete = filteredFacts[selectedIndex];
-    if (factToDelete) {
-      db.softDeleteFact(factToDelete.id);
+    const loreToDelete = filteredLores[selectedIndex];
+    if (loreToDelete) {
+      db.softDeleteLore(loreToDelete.id);
       // Remove from local state
-      const newFacts = facts.filter(f => f.id !== factToDelete.id);
-      const newFilteredFacts = filteredFacts.filter(f => f.id !== factToDelete.id);
-      setFacts(newFacts);
-      setFilteredFacts(newFilteredFacts);
+      const newLores = lores.filter(f => f.id !== loreToDelete.id);
+      const newFilteredLores = filteredLores.filter(f => f.id !== loreToDelete.id);
+      setLores(newLores);
+      setFilteredLores(newFilteredLores);
       setShowDeleteConfirm(false);
       setDeleteSuccess(true);
       
@@ -309,7 +309,7 @@ export function FactsView({
       setTimeout(() => setDeleteSuccess(false), 2000);
       
       // Adjust selected index if needed
-      if (selectedIndex >= newFilteredFacts.length && selectedIndex > 0) {
+      if (selectedIndex >= newFilteredLores.length && selectedIndex > 0) {
         setSelectedIndex(selectedIndex - 1);
       }
     }
@@ -325,12 +325,12 @@ export function FactsView({
   }
 
   // Show confirmation dialog instead of normal view
-  if (showDeleteConfirm && selectedFact) {
+  if (showDeleteConfirm && selectedLore) {
     return (
       <AlternativeScreenView>
         <Box flexDirection="column" height={20} justifyContent="center" alignItems="center">
           <ConfirmDialog
-            message={`Delete fact: "${selectedFact.content.substring(0, 50)}${selectedFact.content.length > 50 ? '...' : ''}"?`}
+            message={`Delete lore: "${selectedLore.content.substring(0, 50)}${selectedLore.content.length > 50 ? '...' : ''}"?`}
             onConfirm={handleDelete}
             onCancel={() => setShowDeleteConfirm(false)}
             dangerous={true}
@@ -340,14 +340,14 @@ export function FactsView({
     );
   }
 
-  // Show similar facts view
-  if (showSimilarFacts && selectedFact) {
+  // Show similar lores view
+  if (showSimilarLores && selectedLore) {
     return (
       <AlternativeScreenView>
-        <SimilarFactsView 
+        <SimilarLoresView 
           db={db} 
-          fact={selectedFact} 
-          onBack={() => setShowSimilarFacts(false)}
+          lore={selectedLore} 
+          onBack={() => setShowSimilarLores(false)}
         />
       </AlternativeScreenView>
     );
@@ -361,15 +361,15 @@ export function FactsView({
       <Box height={3} flexDirection="column">
         <Text bold>
           {initialQuery
-            ? `Found ${filteredFacts.length} fact${filteredFacts.length !== 1 ? 's' : ''} matching "${initialQuery}"`
-            : `Found ${filteredFacts.length} fact${filteredFacts.length !== 1 ? 's' : ''}`}
+            ? `Found ${filteredLores.length} lore${filteredLores.length !== 1 ? 's' : ''} matching "${initialQuery}"`
+            : `Found ${filteredLores.length} lore${filteredLores.length !== 1 ? 's' : ''}`}
           {searchTerm && ` (filtered: "${searchTerm}")`}
         </Text>
-        {deleteSuccess && <Text color="green">✓ Fact deleted (archived)</Text>}
-        {(type || service) && (
+        {deleteSuccess && <Text color="green">✓ Lore deleted (archived)</Text>}
+        {(type || province) && (
           <Text dimColor>Filters: {[
             type && `type=${type}`,
-            service && `service=${service}`
+            province && `province=${province}`
           ].filter(Boolean).join(', ')}</Text>
         )}
         {isSearching && (
@@ -382,9 +382,9 @@ export function FactsView({
 
       {/* Main content area - dynamic height */}
       <Box flexDirection="row" height={contentHeight} overflow="hidden">
-        {/* Left pane - fact list */}
-        <Box flexDirection="column" width={factsWidth} marginRight={2}>
-          <Text bold dimColor>{initialQuery ? 'Results' : 'Facts'}</Text>
+        {/* Left pane - lore list */}
+        <Box flexDirection="column" width={loresWidth} marginRight={2}>
+          <Text bold dimColor>{initialQuery ? 'Results' : 'Lores'}</Text>
           <Box marginTop={1} width="100%">
             <SelectInput
               items={items}
@@ -399,19 +399,19 @@ export function FactsView({
         {/* Right pane - details */}
         <Box flexDirection="column" width={detailsWidth} overflow="hidden">
           <Text bold dimColor>Details</Text>
-          {selectedFact && (
+          {selectedLore && (
             <Box flexDirection="column" marginTop={1} height={contentHeight - 2} overflow="hidden">
               {/* Content section - flexible height */}
               <Box flexDirection="column" flexGrow={1} overflow="hidden">
                 <TruncatedText 
-                  text={selectedFact.content} 
-                  maxLines={selectedFact.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
+                  text={selectedLore.content} 
+                  maxLines={selectedLore.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
                   width={detailsWidth} 
                 />
-                {selectedFact.why && (
+                {selectedLore.why && (
                   <Box marginTop={1} flexDirection="column">
                     <TruncatedText 
-                      text={`Why: ${selectedFact.why}`} 
+                      text={`Why: ${selectedLore.why}`} 
                       maxLines={Math.floor((contentHeight - 10) * 0.4)} 
                       width={detailsWidth} 
                       dimColor={true}
@@ -423,34 +423,34 @@ export function FactsView({
               {/* Metadata section - fixed at bottom */}
               <Box flexDirection="column" flexShrink={0} marginTop={1}>
                 <TruncatedText 
-                  text={`Project: ${selectedFact.projectName}${selectedFact.isCurrentProject ? ' •' : ''}`}
+                  text={`Realm: ${selectedLore.realmName}${selectedLore.isCurrentRealm ? ' •' : ''}`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
                 <TruncatedText 
-                  text={`Type: ${selectedFact.type} | Status: ${selectedFact.status}`}
+                  text={`Type: ${selectedLore.type} | Status: ${selectedLore.status}`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
                 <TruncatedText 
-                  text={`Confidence: ${selectedFact.confidence}% | ${selectedFact.createdAt.toLocaleDateString()}`}
+                  text={`Confidence: ${selectedLore.confidence}% | ${selectedLore.createdAt.toLocaleDateString()}`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
-                {selectedFact.tags.length > 0 && (
+                {selectedLore.sigils.length > 0 && (
                   <TruncatedText 
-                    text={`Tags: ${selectedFact.tags.join(', ')}`}
+                    text={`Sigils: ${selectedLore.sigils.join(', ')}`}
                     maxLines={1}
                     width={detailsWidth}
                     dimColor={true}
                   />
                 )}
-                {selectedFact.services.length > 0 && (
+                {selectedLore.provinces.length > 0 && (
                   <TruncatedText 
-                    text={`Services: ${selectedFact.services.join(', ')}`}
+                    text={`Provinces: ${selectedLore.provinces.join(', ')}`}
                     maxLines={1}
                     width={detailsWidth}
                     dimColor={true}

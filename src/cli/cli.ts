@@ -3,14 +3,17 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { Database } from '../db/database.js';
-import { getProjectInfo } from './utils/project.js';
+import { getRealmInfo } from './utils/realm.js';
 import { getDbPath } from './utils/db-config.js';
-import { renderAddFact } from './commands/add.js';
-import { renderSearch } from './commands/search.js';
-import { renderList } from './commands/list.js';
-import { renderProjectInfo } from './commands/project.js';
+import { renderAddLore } from './commands/add.js';
+import { renderBrowse } from './commands/browse.js';
+import { renderRealmInfo } from './commands/realm.js';
 import { renderExport } from './commands/export.js';
 import { renderImport } from './commands/import.js';
+import { migrateEmbeddingsCommand } from './commands/migrate-embeddings.js';
+import { configCommand } from './commands/config.js';
+import { EmbeddingService } from '../core/embeddings.js';
+import { ConfigManager } from '../core/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,20 +28,21 @@ export function createCLI(): Command {
 
   program
     .name('lh')
-    .description('LoreHub - Capture and query your project\'s development knowledge')
+    .description('LoreHub - Capture and query your realm\'s development knowledge')
     .version(packageJson.version);
 
   // Add command
   program
     .command('add [content...]')
-    .description('Add a new fact to your project')
-    .option('-t, --type <type>', 'Fact type (decision, learning, assumption, etc.)')
-    .option('-w, --why <reason>', 'Why this fact exists')
-    .option('-s, --services <services>', 'Comma-separated list of services')
-    .option('--tags <tags>', 'Comma-separated list of tags')
-    .option('-c, --confidence <number>', 'Confidence level (0-100)', '80')
+    .description('Add a new lore to your realm')
+    .option('-t, --type <type>', 'Lore type (decree, lesson, assumption, etc.)')
+    .option('-w, --why <reason>', 'Why this lore exists')
+    .option('-s, --provinces <provinces>', 'Comma-separated list of provinces')
+    .option('--sigils <sigils>', 'Comma-separated list of sigils')
+    .option('-c, --confidence <number>', 'Confidence level (0-100)')
     .action(async (contentParts: string[], options) => {
       const content = contentParts.join(' ');
+      const config = ConfigManager.getInstance();
       
       try {
         if (!content && !process.stdin.isTTY) {
@@ -46,13 +50,18 @@ export function createCLI(): Command {
           process.exit(1);
         }
 
-        await renderAddFact({
+        // Use config default if confidence not specified
+        const confidence = options.confidence 
+          ? parseInt(options.confidence, 10)
+          : config.get('defaultConfidence');
+
+        await renderAddLore({
           initialContent: content,
           type: options.type,
           why: options.why,
-          services: options.services?.split(',').map((s: string) => s.trim()),
-          tags: options.tags?.split(',').map((t: string) => t.trim()),
-          confidence: parseInt(options.confidence, 10),
+          provinces: options.provinces?.split(',').map((s: string) => s.trim()),
+          sigils: options.sigils?.split(',').map((t: string) => t.trim()),
+          confidence,
         });
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
@@ -60,26 +69,25 @@ export function createCLI(): Command {
       }
     });
 
-  // Search command
+  // Browse command (new unified interface)
   program
-    .command('search <query>')
-    .description('Search facts across all projects (supports * and ? wildcards)')
-    .option('-t, --type <type>', 'Filter by fact type')
-    .option('-s, --service <service>', 'Filter by service')
-    .option('-p, --project <path>', 'Filter by specific project path')
-    .option('--current', 'Search only in current project')
-    .option('--semantic', 'Use semantic search to find conceptually similar facts')
-    .option('--threshold <number>', 'Similarity threshold for semantic search (0-1)', '0.3')
-    .action(async (query: string, options) => {
+    .command('browse [query]')
+    .alias('b')
+    .description('Browse and search lores with unified interface')
+    .option('-t, --type <type>', 'Filter by lore type')
+    .option('-s, --province <province>', 'Filter by province')
+    .option('-r, --realm <path>', 'Filter by specific realm path')
+    .option('--current', 'Browse only current realm')
+    .option('-m, --mode <mode>', 'Search mode: literal, semantic, or hybrid')
+    .action(async (query: string | undefined, options) => {
       try {
-        await renderSearch({
+        await renderBrowse({
           query,
           type: options.type,
-          service: options.service,
-          projectPath: options.project,
-          currentProjectOnly: options.current,
-          semantic: options.semantic,
-          threshold: parseFloat(options.threshold),
+          province: options.province,
+          realmPath: options.realm,
+          currentRealmOnly: options.current,
+          searchMode: options.mode as 'literal' | 'semantic' | 'hybrid' | undefined,
         });
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
@@ -87,78 +95,60 @@ export function createCLI(): Command {
       }
     });
 
-  // List command
+  // Realm command
   program
-    .command('list')
-    .alias('ls')
-    .description('List facts from all projects')
-    .option('-t, --type <type>', 'Filter by fact type')
-    .option('-s, --service <service>', 'Filter by service')
-    .option('-n, --limit <number>', 'Limit results', '20')
-    .option('-p, --project <path>', 'Filter by specific project path')
-    .option('--current', 'List only from current project')
-    .action(async (options) => {
-      try {
-        await renderList({
-          type: options.type,
-          service: options.service,
-          limit: parseInt(options.limit, 10),
-          projectPath: options.project,
-          currentProjectOnly: options.current,
-        });
-      } catch (error) {
-        console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
-        process.exit(1);
-      }
-    });
-
-  // Project command
-  program
-    .command('project')
-    .description('Show current project information')
+    .command('realm')
+    .description('Show current realm information')
     .action(async () => {
       try {
         if (!process.stdin.isTTY) {
           // Non-interactive mode
           const dbPath = getDbPath();
           const db = new Database(dbPath);
-          const projectInfo = await getProjectInfo(process.cwd());
+          const realmInfo = await getRealmInfo(process.cwd());
           
-          const project = db.findProjectByPath(projectInfo.path);
+          const realm = db.findRealmByPath(realmInfo.path);
           
-          if (project) {
-            console.log(`\nProject: ${project.name}`);
-            console.log(`Path: ${project.path}`);
-            console.log(`Type: ${project.isMonorepo ? 'Monorepo' : 'Standard'}`);
-            if (project.services.length > 0) {
-              console.log(`Services: ${project.services.join(', ')}`);
+          if (realm) {
+            console.log(`\nRealm: ${realm.name}`);
+            console.log(`Path: ${realm.path}`);
+            console.log(`Type: ${realm.isMonorepo ? 'Monorepo' : 'Standard'}`);
+            if (realm.provinces.length > 0) {
+              console.log(`Provinces: ${realm.provinces.join(', ')}`);
             }
-            if (project.gitRemote) {
-              console.log(`Git: ${project.gitRemote}`);
+            if (realm.gitRemote) {
+              console.log(`Git: ${realm.gitRemote}`);
             }
-            console.log(`Created: ${project.createdAt.toLocaleDateString()}`);
-            console.log(`Last seen: ${project.lastSeen.toLocaleDateString()}`);
+            console.log(`Created: ${realm.createdAt.toLocaleDateString()}`);
+            console.log(`Last seen: ${realm.lastSeen.toLocaleDateString()}`);
             
-            const facts = db.listFactsByProject(project.id);
-            console.log(`\nFacts: ${facts.length}`);
+            const lores = db.listLoresByRealm(realm.id);
+            console.log(`\nLores: ${lores.length}`);
             
-            const factsByType = facts.reduce((acc, fact) => {
-              acc[fact.type] = (acc[fact.type] || 0) + 1;
+            const loresByType = lores.reduce((acc, lore) => {
+              acc[lore.type] = (acc[lore.type] || 0) + 1;
               return acc;
           }, {} as Record<string, number>);
           
-          Object.entries(factsByType).forEach(([type, count]) => {
+          Object.entries(loresByType).forEach(([type, count]) => {
             console.log(`  ${type}: ${count}`);
           });
+          
+          // Show embedding info
+          const embeddingService = EmbeddingService.getInstance();
+          const modelConfig = embeddingService.getModelConfig();
+          console.log(`\nEmbedding Configuration:`);
+          console.log(`Model: ${embeddingService.getCurrentModel()}`);
+          console.log(`Dimensions: ${modelConfig.dimensions}`);
         } else {
-          console.log('No LoreHub project found in this directory.');
-          console.log('Run "lh add" to create your first fact.');
+          console.log('No LoreHub realm found in this directory.');
+          console.log('Run "lh add" to create your first lore.');
         }
         
         db.close();
       } else {
         // Interactive mode with Ink
-        await renderProjectInfo();
+        await renderRealmInfo();
       }
       } catch (error) {
         console.error('Error:', error instanceof Error ? error.message : 'Unknown error');
@@ -169,13 +159,13 @@ export function createCLI(): Command {
   // Export command
   program
     .command('export <output>')
-    .description('Export facts to a file')
-    .option('-p, --project <path>', 'Export facts from specific project only')
+    .description('Export lores to a file')
+    .option('-r, --realm <path>', 'Export lores from specific realm only')
     .option('-f, --format <format>', 'Output format (json, markdown)', 'json')
     .action(async (output: string, options) => {
       try {
         await renderExport({
-          projectPath: options.project,
+          realmPath: options.realm,
           outputFile: output,
           format: options.format,
         });
@@ -188,7 +178,7 @@ export function createCLI(): Command {
   // Import command
   program
     .command('import <input>')
-    .description('Import facts from a file')
+    .description('Import lores from a file')
     .option('-m, --merge', 'Merge with existing data (default: replace)')
     .action(async (input: string, options) => {
       try {
@@ -204,37 +194,37 @@ export function createCLI(): Command {
 
   // Similar command
   program
-    .command('similar <factId>')
-    .description('Find facts similar to a given fact')
-    .option('-l, --limit <number>', 'Maximum number of similar facts to show', '10')
+    .command('similar <loreId>')
+    .description('Find lores similar to a given lore (kindred lores)')
+    .option('-l, --limit <number>', 'Maximum number of kindred lores to show', '10')
     .option('-t, --threshold <number>', 'Similarity threshold (0-1)', '0.5')
-    .action(async (factId: string, options) => {
+    .action(async (loreId: string, options) => {
       try {
         const dbPath = getDbPath();
         const db = new Database(dbPath);
         
-        const fact = db.findFact(factId);
-        if (!fact) {
-          console.error(`Fact with ID ${factId} not found`);
+        const lore = db.findLore(loreId);
+        if (!lore) {
+          console.error(`Lore with ID ${loreId} not found`);
           process.exit(1);
         }
         
-        console.log(`\nFinding facts similar to:\n[${fact.type}] ${fact.content}\n`);
+        console.log(`\nFinding lores similar to:\n[${lore.type}] ${lore.content}\n`);
         
-        const similarFacts = await db.findSimilarFacts(factId, {
+        const similarLores = await db.findSimilarLores(loreId, {
           limit: parseInt(options.limit),
           threshold: parseFloat(options.threshold)
         });
         
-        if (similarFacts.length === 0) {
-          console.log('No similar facts found');
+        if (similarLores.length === 0) {
+          console.log('No kindred lores found');
         } else {
-          console.log(`Found ${similarFacts.length} similar fact${similarFacts.length === 1 ? '' : 's'}:\n`);
-          similarFacts.forEach((similar, index) => {
-            const project = db.findProject(similar.projectId);
+          console.log(`Found ${similarLores.length} kindred lore${similarLores.length === 1 ? '' : 's'}:\n`);
+          similarLores.forEach((similar, index) => {
+            const realm = db.findRealm((similar as any).realmId || similar.realmId);
             console.log(`${index + 1}. [${similar.type}] ${similar.content}`);
             console.log(`   Similarity: ${(similar.similarity * 100).toFixed(1)}%`);
-            console.log(`   Project: ${project?.name || 'Unknown'} (${project?.path || 'Unknown'})`);
+            console.log(`   Realm: ${realm?.name || 'Unknown'} (${realm?.path || 'Unknown'})`);
             if (similar.why) {
               console.log(`   Why: ${similar.why}`);
             }
@@ -250,63 +240,10 @@ export function createCLI(): Command {
     });
 
   // Migrate embeddings command
-  program
-    .command('migrate-embeddings')
-    .description('Generate embeddings for existing facts')
-    .option('-p, --project <id>', 'Generate embeddings for specific project only')
-    .option('-b, --batch-size <size>', 'Number of facts to process at once', '50')
-    .action(async (options) => {
-      const dbPath = getDbPath();
-      const db = new Database(dbPath);
-      
-      console.log('Initializing embedding service...');
-      
-      try {
-        // Count facts without embeddings
-        const query = options.project
-          ? `SELECT COUNT(*) as count FROM facts WHERE (embedding_generated = 0 OR embedding_generated IS NULL) AND project_id = ?`
-          : `SELECT COUNT(*) as count FROM facts WHERE embedding_generated = 0 OR embedding_generated IS NULL`;
-        
-        const params = options.project ? [options.project] : [];
-        const result = db['sqlite'].prepare(query).get(...params) as { count: number };
-        const totalFacts = result.count;
-        
-        if (totalFacts === 0) {
-          console.log('✓ All facts already have embeddings!');
-          db.close();
-          return;
-        }
-        
-        console.log(`Found ${totalFacts} facts without embeddings. Starting migration...`);
-        
-        let processed = 0;
-        const batchSize = parseInt(options.batchSize);
-        
-        while (processed < totalFacts) {
-          console.log(`Processing facts ${processed + 1}-${Math.min(processed + batchSize, totalFacts)} of ${totalFacts}...`);
-          
-          const count = await db.generateMissingEmbeddings(options.project, batchSize);
-          processed += count;
-          
-          if (count === 0) {
-            // No more facts to process
-            break;
-          }
-          
-          // Update progress
-          const percentage = Math.round((processed / totalFacts) * 100);
-          console.log(`Progress: ${percentage}% (${processed}/${totalFacts} facts)`);
-        }
-        
-        console.log(`✓ Successfully generated embeddings for ${processed} facts!`);
-      } catch (error) {
-        console.error('✗ Failed to generate embeddings');
-        console.error(error);
-        process.exit(1);
-      } finally {
-        db.close();
-      }
-    });
+  program.addCommand(migrateEmbeddingsCommand);
+
+  // Config command
+  program.addCommand(configCommand);
 
   return program;
 }
@@ -315,10 +252,10 @@ export async function run(argv?: string[]): Promise<void> {
   const program = createCLI();
   const args = argv || process.argv;
   
-  // If no arguments provided, default to list command
+  // If no arguments provided, default to browse command
   if (args.length === 2) {
     // argv is like ['node', 'script.js'] when no args
-    await renderList({ limit: 20 });
+    await renderBrowse({});
     return;
   }
   

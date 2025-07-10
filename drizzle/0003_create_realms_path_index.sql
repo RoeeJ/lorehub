@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "realms_path_unique" ON "realms" ("path");

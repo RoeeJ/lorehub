@@ -7,7 +7,7 @@
 ### 1. Project Planning & Architecture ✅
 - Decided on name: **LoreHub** (CLI alias: `lh`)
 - Tech stack: TypeScript + SQLite + better-sqlite3 + MCP SDK + Zod
-- Architecture: Local-first, event-sourced facts
+- Architecture: Local-first, event-sourced lores
 - Created comprehensive documentation:
   - `docs/ARCHITECTURE.md` - Technical architecture
   - `docs/DECISIONS.md` - Design decisions
@@ -29,18 +29,18 @@
 - Created first test file: `src/core/types.test.ts`
 - Implemented `src/core/types.ts` with Zod schemas
 - Completed RED-GREEN-REFACTOR cycle:
-  - FactSchema, RelationSchema, ProjectSchema
-  - Type guards (isFact, isRelation, isProject)
-  - Utility types (CreateFactInput, UpdateFactInput, etc.)
+  - LoreSchema, RelationSchema, RealmSchema
+  - Type guards (isLore, isRelation, isRealm)
+  - Utility types (CreateLoreInput, UpdateLoreInput, etc.)
   - Performance-focused validation helpers
-- All 14 tests passing
+- All 15 tests passing
 
 #### Database Layer ✅
 - Created comprehensive test suite: `src/db/database.test.ts`
 - Implemented `src/db/database.ts` with better-sqlite3
 - Features implemented:
   - SQLite connection with WAL mode for performance
-  - Complete CRUD operations for Projects, Facts, Relations
+  - Complete CRUD operations for Realms, Lores, Relations
   - Transaction support with rollback
   - Performance indexes on key columns
   - Bulk insert optimization
@@ -51,17 +51,17 @@
 - Implemented with Commander.js for argument parsing
 - Ink for beautiful TUI components
 - Features completed:
-  - `lh add` - Add facts to current project (inline or interactive mode with Ink UI)
-  - `lh project` - Show project information and stats
-  - `lh search` - Search facts across ALL projects with wildcard support
-  - `lh list` - List facts from ALL projects with interactive selection
+  - `lh add` - Add lores to current realm (inline or interactive mode with Ink UI)
+  - `lh realm` - Show realm information and stats
+  - `lh search` - Search lores across ALL realms with wildcard support
+  - `lh list` - List lores from ALL realms with interactive selection
 - Global knowledge hub approach:
-  - Facts always added to current project
-  - Search/list show facts from ALL projects by default
-  - Current project facts marked with ⭐
-  - Use `--current` flag to limit to current project only
-  - Use `-p <path>` to filter by specific project
-- Smart project detection from package.json/git
+  - Lores always added to current realm
+  - Search/list show lores from ALL realms by default
+  - Current realm lores marked with ⭐
+  - Use `--current` flag to limit to current realm only
+  - Use `-r <path>` to filter by specific realm
+- Smart realm detection from package.json/git
 - Non-TTY support for CI/CD environments
 - Database stored in ~/.lorehub/lorehub.db
 - Fixed all interactive UI issues:
@@ -72,15 +72,15 @@
 
 #### MCP Server Implementation ✅
 - Created MCP server for AI assistant integration
-- Implemented fact querying tools:
-  - `search_facts`: Search across ALL projects by default (with wildcards and filters)
-  - `list_facts`: List from ALL projects by default (with type/service filters)
-  - `get_fact`: Get specific fact by ID
-  - `list_projects`: List all projects
+- Implemented lore querying tools:
+  - `search_lores`: Search across ALL realms by default (with wildcards and filters)
+  - `list_lores`: List from ALL realms by default (with type/province filters)
+  - `get_lore`: Get specific lore by ID
+  - `list_realms`: List all realms
 - Global knowledge hub in MCP:
-  - Tools search/list across all projects by default
-  - Optional `project_path` parameter to limit to specific project
-  - Response includes project information for each fact
+  - Tools search/list across all realms by default
+  - Optional `realm_path` parameter to limit to specific realm
+  - Response includes realm information for each lore
 - Full test coverage for MCP server (15 tests passing)
 - Proper error handling and validation
 - Package.json MCP configuration added
@@ -110,21 +110,21 @@ lorehub/
 │   │   ├── commands/
 │   │   │   ├── add.tsx ✅
 │   │   │   ├── list.tsx ✅
-│   │   │   ├── project.tsx ✅
-│   │   │   ├── search.tsx ✅
+│   │   │   ├── realm.tsx ✅
+│   │   │   ├── browse.tsx ✅
 │   │   │   ├── export.tsx ✅
 │   │   │   └── import.tsx ✅
 │   │   ├── components/
-│   │   │   ├── AddFact.tsx ✅
-│   │   │   ├── AddFact.test.tsx ✅
-│   │   │   ├── ListFacts.tsx ✅
-│   │   │   ├── SearchFacts.tsx ✅
+│   │   │   ├── AddLore.tsx ✅
+│   │   │   ├── AddLore.test.tsx ✅
+│   │   │   ├── LoresView.tsx ✅
+│   │   │   ├── SimilarLoresView.tsx ✅
 │   │   │   ├── Help.tsx ✅
 │   │   │   ├── ErrorMessage.tsx ✅
 │   │   │   └── Progress.tsx ✅
 │   │   └── utils/
 │   │       ├── db-config.ts ✅
-│   │       └── project.ts ✅
+│   │       └── realm.ts ✅ (renamed from project.ts)
 │   ├── mcp/
 │   │   ├── server.ts ✅
 │   │   ├── server.test.ts ✅
@@ -145,7 +145,7 @@ lorehub/
 - CLI: 8 tests (1 skipped) ✅
 - CLI Components: 9 tests (3 skipped) ✅
 - MCP Server: 15 tests ✅
-- **Total: 63 tests passing, 4 skipped**
+- **Total: 67 tests passing, 4 skipped**
 
 ## Recent Updates (2025-01-09)
 - Fixed test failures by properly mocking Ink components
@@ -154,7 +154,7 @@ lorehub/
 - All tests passing, project builds successfully
 - Implemented grid-based UI layout with fixed heights (20 lines)
 - Added vim-style search functionality (/) to list and search views
-- Redesigned AddFact screen with two-column layout and preview
+- Redesigned AddLore screen with two-column layout and preview
 - Added keyboard shortcuts help component (? key)
 - Created centralized error handling with user-friendly messages
 - Added progress indicators for long operations
@@ -170,14 +170,14 @@ lorehub/
 
 2. **Additional Features**:
    - ✅ Export/import functionality (JSON and Markdown)
-   - Fact relationships visualization
+   - Lore relationships visualization
    - Time-based queries
-   - Fact history/versions
+   - Lore history/versions
 
 3. **AI Integration**:
    - Document MCP usage for Claude/Cursor
    - Create example prompts
-   - Build fact suggestion system
+   - Build lore suggestion system
 
 4. **Publishing**:
    - Add npm scripts for installation
@@ -225,13 +225,95 @@ npm run build
 # Test CLI locally
 npm link
 lh add
-lh list
-lh search "database"
-lh project
+lh browse
+lh realm
 
 # Test MCP server
 ./dist/mcp/index.js
 ```
 
 ## Current Task
-MVP Complete with full CLI and MCP support! Ready for polish phase or additional features.
+v0.2.1 Released! Complete terminology pivot to fantasy theme with all legacy code removed. Full CLI and MCP support with new lore/realm/province terminology.
+
+## Major Terminology Pivot (2025-01-09) ✅ COMPLETED
+
+### Overview
+Pivoting from "facts" to "lores" to better align with the LoreHub brand and create a more cohesive, thematic experience while maintaining professionalism.
+
+### Terminology Changes
+
+#### Core Entities
+- **Fact/Facts** → **Lore/Lores** (countable pieces of wisdom)
+- **Project** → **Realm** (each codebase is its own realm)
+- **Todo** → **Quest** (knowledge to be gained)
+
+#### Lore Types
+- **Decision** → **Decree** (architectural choices made)
+- **Learning** → **Lesson** (wisdom gained from experience)
+- **Assumption** → Assumption (kept as is)
+- **Constraint** → Constraint (kept as is)
+- **Requirement** → Requirement (kept as is)
+- **Risk** → Risk (kept as is)
+
+#### What Stays the Same
+- All CLI commands (add, search, list, etc.) - for familiarity
+- Confidence levels
+- Sigils (tags) and provinces terminology
+- Database field structure (just renamed tables)
+
+### Implementation Status ✅ COMPLETED
+
+1. **Database Migration** ✅
+   - Created migration to rename `facts` table to `lores`
+   - Updated all indexes and constraints
+   - Preserved existing data
+   - Migration completed successfully
+
+2. **Code Updates** ✅
+   - Types: `Fact` → `Lore`, `FactType` → `LoreType` ✅
+   - Interfaces: `CreateFactInput` → `CreateLoreInput` ✅
+   - Functions: `createFact()` → `createLore()`, etc. ✅
+   - Variables: `factId` → `loreId`, `factCount` → `loreCount` ✅
+   - Database queries and references ✅
+   - All legacy code removed in v0.2.1
+
+3. **UI/Display Text Updates** ✅
+   - "Add New Fact" → "Add New Lore" ✅
+   - "Similar facts (10≈)" → "Similar lores (10≈)" ✅
+   - "✓ Fact created successfully" → "✓ Lore created successfully" ✅
+   - "Found 25 facts" → "Found 25 lores" ✅
+   - "Project: lorehub" → "Realm: lorehub" ✅
+
+4. **MCP Tools Renaming** ✅
+   - `create_fact` → `create_lore` ✅
+   - `search_facts` → `search_lores` ✅
+   - `list_facts` → `list_lores` ✅
+   - Updated all tool descriptions ✅
+
+5. **Documentation Updates** ✅
+   - README.md ✅
+   - All guides and examples ✅
+   - Code comments ✅
+   - Test descriptions ✅
+
+### Rationale
+- "Lore" better captures accumulated wisdom and team knowledge
+- Creates stronger brand identity with LoreHub
+- More evocative than clinical "facts"
+- Maintains professionalism while adding character
+
+### Migration Completed ✅
+Successfully executed database migration that:
+1. Creates new tables (realms, lores, lore_relations) with updated terminology
+2. Copies all data from old tables with type conversions (decision→decree, learning→lesson, todo→quest)
+3. Creates compatibility views so the application continues working during the transition
+4. Preserves vector embeddings if they exist
+5. Can be rolled back if needed
+
+Migration files created:
+- `/drizzle/0002_lore_terminology_migration.sql` - Main migration
+- `/drizzle/0002_lore_terminology_migration_rollback.sql` - Rollback script
+- `/scripts/migrate-to-lore-terminology.js` - Executable migration runner
+
+Run with: `node scripts/migrate-to-lore-terminology.js`
+Rollback with: `node scripts/migrate-to-lore-terminology.js --rollback`

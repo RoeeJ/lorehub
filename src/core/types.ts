@@ -1,145 +1,159 @@
 import { z } from 'zod';
 
-// Fact types
-export const FactTypeSchema = z.enum([
-  'decision',
-  'assumption',
-  'constraint',
-  'requirement',
-  'risk',
-  'learning',
-  'todo',
-  'other'
+// Lore types
+export const LoreTypeSchema = z.enum([
+  'decree',      // Architectural or technical choice (was 'decision')
+  'wisdom',      // Something discovered or learned (was 'learning')
+  'belief',      // Unverified belief or hypothesis (was 'assumption')
+  'constraint',  // Limitation or restriction
+  'requirement', // Business or technical requirement
+  'risk',        // Potential problem or concern
+  'quest',       // Future action needed (was 'todo')
+  'saga',        // Major initiative (was 'epic')
+  'story',       // User story
+  'anomaly',     // Bug or issue
+  'other'        // Miscellaneous lore
 ]);
 
-export const FactStatusSchema = z.enum(['active', 'superseded', 'deprecated', 'archived']);
+export const LoreStatusSchema = z.enum([
+  'living',      // Current operating knowledge (was 'active')
+  'ancient',     // Outdated but historically important (was 'deprecated')
+  'whispered',   // Unconfirmed lore (was 'draft')
+  'proclaimed',  // Verified lore (was 'confirmed')
+  'archived'     // Soft deleted
+]);
 
-export const SourceTypeSchema = z.enum(['manual', 'inferred', 'imported']);
+export const OriginTypeSchema = z.enum(['manual', 'inferred', 'imported']);
 
-export const SourceSchema = z.object({
-  type: SourceTypeSchema,
+export const OriginSchema = z.object({
+  type: OriginTypeSchema,
   reference: z.string(),
   context: z.string().optional(),
 });
 
-export const FactSchema = z.object({
+export const LoreSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  realmId: z.string(),  // was realmId
   content: z.string(),
   why: z.string().optional(),
-  type: FactTypeSchema,
-  services: z.array(z.string()).default([]),
-  tags: z.array(z.string()).default([]),
+  type: LoreTypeSchema,
+  provinces: z.array(z.string()).default([]),  // Services in monorepo (was 'provinces')
+  sigils: z.array(z.string()).default([]),     // Tags (was 'tags')
   confidence: z.number().min(0).max(100).default(80),
-  source: SourceSchema,
-  status: FactStatusSchema.default('active'),
+  origin: OriginSchema,
+  status: LoreStatusSchema.default('living'),
   createdAt: z.date().default(() => new Date()),
   updatedAt: z.date().default(() => new Date()),
 });
 
 // Relation types
 export const RelationTypeSchema = z.enum([
-  'supersedes',
-  'contradicts',
-  'supports',
-  'depends_on',
-  'relates_to'
+  'succeeds',    // Supersedes (was 'supersedes')
+  'challenges',  // Contradicts (was 'contradicts')
+  'supports',    // Supports
+  'depends_on',  // Depends on
+  'bound_to'     // Related to (was 'relates_to')
 ]);
 
 export const RelationSchema = z.object({
-  fromFactId: z.string(),
-  toFactId: z.string(),
+  fromLoreId: z.string(),
+  toLoreId: z.string(),
   type: RelationTypeSchema,
   strength: z.number().min(0).max(1).default(1.0),
   metadata: z.record(z.unknown()).optional(),
   createdAt: z.date().default(() => new Date()),
-}).refine(data => data.fromFactId !== data.toFactId, {
-  message: "A fact cannot have a relation to itself"
+}).refine(data => data.fromLoreId !== data.toLoreId, {
+  message: "A lore cannot have a relation to itself"
 });
 
-// Project types
-export const ProjectSchema = z.object({
+// Realm types (was Realm)
+export const RealmSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string().min(1),
   gitRemote: z.string().url().optional(),
   isMonorepo: z.boolean().default(false),
-  services: z.array(z.string()).default([]),
+  provinces: z.array(z.string()).default([]),
   lastSeen: z.date().default(() => new Date()),
   createdAt: z.date().default(() => new Date()),
 });
 
 // Type exports
-export type FactType = z.infer<typeof FactTypeSchema>;
-export type FactStatus = z.infer<typeof FactStatusSchema>;
-export type SourceType = z.infer<typeof SourceTypeSchema>;
-export type Source = z.infer<typeof SourceSchema>;
-export type Fact = z.infer<typeof FactSchema>;
+export type LoreType = z.infer<typeof LoreTypeSchema>;
+export type LoreStatus = z.infer<typeof LoreStatusSchema>;
+export type OriginType = z.infer<typeof OriginTypeSchema>;
+export type Origin = z.infer<typeof OriginSchema>;
+export type Lore = z.infer<typeof LoreSchema>;
 export type RelationType = z.infer<typeof RelationTypeSchema>;
 export type Relation = z.infer<typeof RelationSchema>;
-export type Project = z.infer<typeof ProjectSchema>;
+export type LoreRelation = Relation;  // New name alias
+export type Realm = z.infer<typeof RealmSchema>;
+
 
 // Type guards
-export const isFact = (value: unknown): value is Fact => {
-  return FactSchema.safeParse(value).success;
+export const isLore = (value: unknown): value is Lore => {
+  return LoreSchema.safeParse(value).success;
 };
 
 export const isRelation = (value: unknown): value is Relation => {
   return RelationSchema.safeParse(value).success;
 };
 
-export const isProject = (value: unknown): value is Project => {
-  return ProjectSchema.safeParse(value).success;
+export const isRealm = (value: unknown): value is Realm => {
+  return RealmSchema.safeParse(value).success;
 };
 
-// Utility types
-export type FactId = Fact['id'];
-export type ProjectId = Project['id'];
 
-export type CreateFactInput = {
-  projectId: string;
+// Utility types
+export type LoreId = Lore['id'];
+export type RealmId = Realm['id'];
+
+export type CreateLoreInput = {
+  realmId: string;
   content: string;
-  type: FactType;
-  source: Source;
+  type: LoreType;
+  origin: Origin;
   why?: string;
-  services?: string[];
-  tags?: string[];
+  provinces?: string[];
+  sigils?: string[];
   confidence?: number;
-  status?: FactStatus;
+  status?: LoreStatus;
   id?: string;
   createdAt?: Date;
   updatedAt?: Date;
 };
 
-export type UpdateFactInput = Partial<Omit<Fact, 'id' | 'projectId' | 'createdAt'>>;
+export type UpdateLoreInput = Partial<Omit<Lore, 'id' | 'realmId' | 'createdAt'>>;
+
 
 export type CreateRelationInput = {
-  fromFactId: string;
-  toFactId: string;
+  fromLoreId: string;
+  toLoreId: string;
   type: RelationType;
   strength?: number;
   metadata?: Record<string, unknown>;
   createdAt?: Date;
 };
 
-export type CreateProjectInput = {
+export type CreateRealmInput = {
   name: string;
   path: string;
   gitRemote?: string;
   isMonorepo?: boolean;
-  services?: string[];
+  provinces?: string[];
   id?: string;
   createdAt?: Date;
   lastSeen?: Date;
 };
 
+
 // Performance-focused validation helpers
-export const validateFact = (fact: unknown): Fact => {
-  return FactSchema.parse(fact);
+export const validateLore = (lore: unknown): Lore => {
+  return LoreSchema.parse(lore);
 };
 
-export const validateFactSafe = (fact: unknown) => {
-  return FactSchema.safeParse(fact);
+export const validateLoreSafe = (lore: unknown) => {
+  return LoreSchema.safeParse(lore);
 };
 
 export const validateRelation = (relation: unknown): Relation => {
@@ -150,10 +164,11 @@ export const validateRelationSafe = (relation: unknown) => {
   return RelationSchema.safeParse(relation);
 };
 
-export const validateProject = (project: unknown): Project => {
-  return ProjectSchema.parse(project);
+export const validateRealm = (realm: unknown): Realm => {
+  return RealmSchema.parse(realm);
 };
 
-export const validateProjectSafe = (project: unknown) => {
-  return ProjectSchema.safeParse(project);
+export const validateRealmSafe = (realm: unknown) => {
+  return RealmSchema.safeParse(realm);
 };
+

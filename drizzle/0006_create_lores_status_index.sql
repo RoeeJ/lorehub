@@ -1,0 +1,1 @@
+CREATE INDEX "idx_lores_status" ON "lores" ("status");

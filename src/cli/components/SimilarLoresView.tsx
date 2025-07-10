@@ -4,32 +4,32 @@ import SelectInput from 'ink-select-input';
 import { TruncatedText } from './TruncatedText.js';
 import { useTerminalDimensions } from '../hooks/useTerminalDimensions.js';
 import type { Database } from '../../db/database.js';
-import type { Fact } from '../../core/types.js';
+import type { Lore } from '../../core/types.js';
 
-interface SimilarFactsViewProps {
+interface SimilarLoresViewProps {
   db: Database;
-  fact: Fact & { projectName: string; projectPath: string; isCurrentProject: boolean };
+  lore: Lore & { realmName: string; realmPath: string; isCurrentRealm: boolean };
   onBack: () => void;
 }
 
-export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
+export function SimilarLoresView({ db, lore: lore, onBack }: SimilarLoresViewProps) {
   const { columns, rows } = useTerminalDimensions();
-  const [currentFact, setCurrentFact] = useState(fact);
-  const [similarFacts, setSimilarFacts] = useState<Array<Fact & { similarity: number; projectName: string; projectPath: string; isCurrentProject: boolean }>>([]);
+  const [currentLore, setCurrentLore] = useState(lore);
+  const [similarLores, setSimilarLores] = useState<Array<Lore & { similarity: number; realmName: string; realmPath: string; isCurrentRealm: boolean }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [navigationHistory, setNavigationHistory] = useState<Array<typeof fact>>([fact]);
-  const [similarFactsCounts, setSimilarFactsCounts] = useState<Map<string, number>>(new Map());
+  const [navigationHistory, setNavigationHistory] = useState<Array<typeof lore>>([lore]);
+  const [similarLoresCounts, setSimilarLoresCounts] = useState<Map<string, number>>(new Map());
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
       onBack();
-    } else if (input === 's' && similarFacts.length > 0 && !loading) {
-      // Navigate to the selected similar fact
-      const selectedSimilarFact = similarFacts[selectedIndex];
-      if (selectedSimilarFact) {
-        setNavigationHistory([...navigationHistory, currentFact]);
-        setCurrentFact(selectedSimilarFact);
+    } else if (input === 's' && similarLores.length > 0 && !loading) {
+      // Navigate to the selected similar lore
+      const selectedSimilarLore = similarLores[selectedIndex];
+      if (selectedSimilarLore) {
+        setNavigationHistory([...navigationHistory, currentLore]);
+        setCurrentLore(selectedSimilarLore);
         setSelectedIndex(0);
         setLoading(true);
       }
@@ -37,10 +37,10 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
       // Go back in navigation history
       const newHistory = [...navigationHistory];
       newHistory.pop(); // Remove current
-      const previousFact = newHistory[newHistory.length - 1];
-      if (previousFact) {
+      const previousLore = newHistory[newHistory.length - 1];
+      if (previousLore) {
         setNavigationHistory(newHistory);
-        setCurrentFact(previousFact);
+        setCurrentLore(previousLore);
         setSelectedIndex(0);
         setLoading(true);
       }
@@ -48,33 +48,33 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
   });
 
   useEffect(() => {
-    const loadSimilarFacts = async () => {
+    const loadSimilarLores = async () => {
       try {
-        const similar = await db.findSimilarFacts(currentFact.id, { 
+        const similar = await db.findSimilarLores(currentLore.id, { 
           limit: 20, 
           threshold: 0.3 
         });
 
-        // Load project info for each similar fact
-        const factsWithProjects = similar.map(f => {
-          const project = db.findProject(f.projectId);
-          const currentProject = db.findProjectByPath(process.cwd());
+        // Load realm info for each similar lore
+        const loresWithRealms = similar.map(f => {
+          const realm = db.findRealm((f as any).realmId || f.realmId);
+          const currentRealm = db.findRealmByPath(process.cwd());
           return {
             ...f,
-            projectName: project?.name || 'Unknown',
-            projectPath: project?.path || '',
-            isCurrentProject: currentProject?.id === f.projectId
+            realmName: realm?.name || 'Unknown',
+            realmPath: realm?.path || '',
+            isCurrentRealm: currentRealm?.id === ((f as any).realmId || f.realmId)
           };
         });
 
-        setSimilarFacts(factsWithProjects);
+        setSimilarLores(loresWithRealms);
         
-        // Load similar counts for each fact
+        // Load similar counts for each lore
         const counts = new Map<string, number>();
         await Promise.all(
-          factsWithProjects.map(async (f) => {
+          loresWithRealms.map(async (f) => {
             try {
-              const similar = await db.findSimilarFacts(f.id, { 
+              const similar = await db.findSimilarLores(f.id, { 
                 limit: 10, 
                 threshold: 0.5 
               });
@@ -84,27 +84,27 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
             }
           })
         );
-        setSimilarFactsCounts(counts);
+        setSimilarLoresCounts(counts);
       } catch (error) {
-        console.error('Failed to load similar facts:', error);
-        setSimilarFacts([]);
+        console.error('Failed to load similar lores:', error);
+        setSimilarLores([]);
       } finally {
         setLoading(false);
       }
     };
 
     setLoading(true);
-    loadSimilarFacts();
-  }, [db, currentFact]);
+    loadSimilarLores();
+  }, [db, currentLore]);
 
   if (loading) {
-    return <Text>Loading similar facts...</Text>;
+    return <Text>Loading similar lores...</Text>;
   }
 
-  if (similarFacts.length === 0) {
+  if (similarLores.length === 0) {
     return (
       <Box flexDirection="column">
-        <Text color="yellow">No similar facts found</Text>
+        <Text color="yellow">No similar lores found</Text>
         <Box marginTop={1}>
           <Text dimColor>Press q or ESC to go back</Text>
         </Box>
@@ -118,13 +118,13 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
   const contentHeight = rows - headerHeight - footerHeight - 1;
   
   // Use same split as main view
-  const factsWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
-  const detailsWidth = columns - factsWidth - 3;
+  const loresWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
+  const detailsWidth = columns - loresWidth - 3;
 
-  const items = similarFacts.map((f, index) => {
+  const items = similarLores.map((f, index) => {
     const typeStr = `[${f.type.substring(0, 3).toUpperCase()}]`;
     const similarityStr = `${(f.similarity * 100).toFixed(0)}%`;
-    const similarCount = similarFactsCounts.get(f.id) || 0;
+    const similarCount = similarLoresCounts.get(f.id) || 0;
     
     // Use fixed-width formatting similar to main view
     // Fixed width similarity percentage (4 chars)
@@ -135,7 +135,7 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
     // Calculate available width
     // Account for: similarity% (4), space (1), similar count (4), space (1), type (5), space (1)
     const prefixLength = 4 + 1 + 4 + 1 + 5 + 1;
-    const availableWidth = factsWidth - prefixLength - 4;
+    const availableWidth = loresWidth - prefixLength - 4;
     const contentMaxLength = Math.max(20, availableWidth);
     
     const content = f.content.length > contentMaxLength 
@@ -148,30 +148,30 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
     };
   });
 
-  const selectedFact = similarFacts[selectedIndex];
+  const selectedLore = similarLores[selectedIndex];
 
   return (
     <Box flexDirection="column" height={rows - 1}>
       {/* Header */}
       <Box height={4} flexDirection="column">
         <Box flexDirection="row">
-          <Text bold>Similar facts to</Text>
+          <Text bold>Similar lores to</Text>
           {navigationHistory.length > 1 && (
             <Text dimColor> (depth: {navigationHistory.length - 1})</Text>
           )}
           <Text bold>:</Text>
         </Box>
-        <Text color="cyan">[{currentFact.type}] {currentFact.content.substring(0, 60)}{currentFact.content.length > 60 ? '...' : ''}</Text>
+        <Text color="cyan">[{currentLore.type}] {currentLore.content.substring(0, 60)}{currentLore.content.length > 60 ? '...' : ''}</Text>
         <Box marginTop={1}>
-          <Text dimColor>Found {similarFacts.length} similar fact{similarFacts.length !== 1 ? 's' : ''}</Text>
+          <Text dimColor>Found {similarLores.length} similar lore{similarLores.length !== 1 ? 's' : ''}</Text>
         </Box>
       </Box>
 
       {/* Main content */}
       <Box flexDirection="row" height={contentHeight} overflow="hidden">
-        {/* Left pane - similar facts list */}
-        <Box flexDirection="column" width={factsWidth} marginRight={2}>
-          <Text bold dimColor>Similar Facts</Text>
+        {/* Left pane - similar lores list */}
+        <Box flexDirection="column" width={loresWidth} marginRight={2}>
+          <Text bold dimColor>Similar Lores</Text>
           <Box marginTop={1}>
             <SelectInput
               items={items}
@@ -185,19 +185,19 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
         {/* Right pane - details */}
         <Box flexDirection="column" width={detailsWidth} overflow="hidden">
           <Text bold dimColor>Details</Text>
-          {selectedFact && (
+          {selectedLore && (
             <Box flexDirection="column" marginTop={1} height={contentHeight - 2} overflow="hidden">
               {/* Content section - flexible height */}
               <Box flexDirection="column" flexGrow={1} overflow="hidden">
                 <TruncatedText 
-                  text={selectedFact.content} 
-                  maxLines={selectedFact.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
+                  text={selectedLore.content} 
+                  maxLines={selectedLore.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
                   width={detailsWidth} 
                 />
-                {selectedFact.why && (
+                {selectedLore.why && (
                   <Box marginTop={1} flexDirection="column">
                     <TruncatedText 
-                      text={`Why: ${selectedFact.why}`} 
+                      text={`Why: ${selectedLore.why}`} 
                       maxLines={Math.floor((contentHeight - 10) * 0.4)} 
                       width={detailsWidth} 
                       dimColor={true}
@@ -209,32 +209,32 @@ export function SimilarFactsView({ db, fact, onBack }: SimilarFactsViewProps) {
               {/* Metadata section - fixed at bottom */}
               <Box flexDirection="column" flexShrink={0} marginTop={1}>
                 <TruncatedText 
-                  text={`Similarity: ${(selectedFact.similarity * 100).toFixed(1)}%`}
+                  text={`Similarity: ${(selectedLore.similarity * 100).toFixed(1)}%`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
                 <TruncatedText 
-                  text={`Project: ${selectedFact.projectName}`}
+                  text={`Realm: ${selectedLore.realmName}`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
                 <TruncatedText 
-                  text={`Type: ${selectedFact.type} | Confidence: ${selectedFact.confidence}%`}
+                  text={`Type: ${selectedLore.type} | Confidence: ${selectedLore.confidence}%`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
                 <TruncatedText 
-                  text={`Created: ${selectedFact.createdAt.toLocaleDateString()}`}
+                  text={`Created: ${selectedLore.createdAt.toLocaleDateString()}`}
                   maxLines={1}
                   width={detailsWidth}
                   dimColor={true}
                 />
-                {selectedFact.tags.length > 0 && (
+                {selectedLore.sigils.length > 0 && (
                   <TruncatedText 
-                    text={`Tags: ${selectedFact.tags.join(', ')}`}
+                    text={`Sigils: ${selectedLore.sigils.join(', ')}`}
                     maxLines={1}
                     width={detailsWidth}
                     dimColor={true}

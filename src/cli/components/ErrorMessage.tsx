@@ -14,7 +14,7 @@ export function ErrorMessage({ error, context, suggestions }: ErrorMessageProps)
   const friendlyMessages: Record<string, { message: string; suggestions: string[] }> = {
     'ENOENT': {
       message: 'File or directory not found',
-      suggestions: ['Check if you\'re in the right directory', 'Ensure the project exists'],
+      suggestions: ['Check if you\'re in the right directory', 'Ensure the realm exists'],
     },
     'EACCES': {
       message: 'Permission denied',
@@ -25,12 +25,12 @@ export function ErrorMessage({ error, context, suggestions }: ErrorMessageProps)
       suggestions: ['Another process might be using the database', 'Try again in a moment'],
     },
     'Content is required': {
-      message: 'Fact content cannot be empty',
-      suggestions: ['Enter a meaningful fact description', 'Press Tab to navigate to the content field'],
+      message: 'Lore content cannot be empty',
+      suggestions: ['Enter a meaningful lore description', 'Press Tab to navigate to the content field'],
     },
-    'Failed to load project': {
-      message: 'Could not load project information',
-      suggestions: ['Ensure you\'re in a valid project directory', 'Check if package.json exists'],
+    'Failed to load realm': {
+      message: 'Could not load realm information',
+      suggestions: ['Ensure you\'re in a valid realm directory', 'Check if package.json exists'],
     },
   };
 

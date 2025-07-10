@@ -6,20 +6,20 @@
 - [ ] Initialize TypeScript project
 - [ ] Set up SQLite with better-sqlite3
 - [ ] Create database schema and migrations
-- [ ] Basic data models (Fact, Project, Relation)
+- [ ] Basic data models (Lore, Realm, Relation)
 - [ ] Core CRUD operations
 
 ### Phase 2: CLI (Week 1-2)
 - [ ] CLI structure with commander.js
-- [ ] Quick capture: `lh "fact text"`
+- [ ] Quick capture: `lh "lore text"`
 - [ ] Search: `lh ?query`
-- [ ] Project detection (git root)
+- [ ] Realm detection (git root)
 - [ ] Basic output formatting
 
 ### Phase 3: MCP Server (Week 2-3)
 - [ ] MCP server setup
 - [ ] Natural language query handler
-- [ ] Fact surfacing logic
+- [ ] Lore surfacing logic
 - [ ] Context awareness (current directory)
 - [ ] Integration with Claude Desktop
 
@@ -38,10 +38,10 @@
 // db/schema.sql
 const schema = `
   -- Main schema from ARCHITECTURE.md
-  CREATE TABLE IF NOT EXISTS projects (...);
-  CREATE TABLE IF NOT EXISTS facts (...);
+  CREATE TABLE IF NOT EXISTS realms (...);
+  CREATE TABLE IF NOT EXISTS lores (...);
   CREATE TABLE IF NOT EXISTS relations (...);
-  CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts (...);
+  CREATE VIRTUAL TABLE IF NOT EXISTS lores_fts (...);
 `;
 
 // db/index.ts
@@ -63,7 +63,7 @@ export class LoreDB {
 }
 ```
 
-### Fact Capture
+### Lore Capture
 
 ```typescript
 // capture/patterns.ts
@@ -78,7 +78,7 @@ export const COMMIT_PATTERNS = [
 
 // capture/llm-monitor.ts
 export class LLMMonitor {
-  detectFactWorthy(conversation: string): FactCandidate[] {
+  detectLoreWorthy(conversation: string): LoreCandidate[] {
     // Smart detection logic
     // Return candidates with confidence scores
   }
@@ -89,28 +89,28 @@ export class LLMMonitor {
 
 ```typescript
 // cli/commands/add.ts
-export async function addFact(content: string, options: AddOptions) {
-  const project = await detectProject(process.cwd());
+export async function addLore(content: string, options: AddOptions) {
+  const realm = await detectRealm(process.cwd());
   const type = options.type || inferType(content);
   
-  const fact = await db.createFact({
+  const lore = await db.createLore({
     content,
     type,
-    project_id: project.id,
+    realm_id: realm.id,
     source: { type: 'manual', reference: 'cli' }
   });
   
-  console.log(`✓ Fact ${fact.id} added`);
+  console.log(`✓ Lore ${lore.id} added`);
 }
 
 // cli/commands/search.ts  
 export async function search(query: string) {
-  const facts = await db.searchFacts(query);
+  const lores = await db.searchLores(query);
   
   // Format output
-  facts.forEach(fact => {
-    console.log(`[${fact.project_id}] ${fact.content}`);
-    if (fact.why) console.log(`  Why: ${fact.why}`);
+  lores.forEach(lore => {
+    console.log(`[${lore.realm_id}] ${lore.content}`);
+    if (lore.why) console.log(`  Why: ${lore.why}`);
   });
 }
 ```
@@ -126,27 +126,27 @@ export class LoreHubMCP {
     
     switch (intent.type) {
       case 'search':
-        return this.searchFacts(intent.params);
+        return this.searchLores(intent.params);
       case 'relate':
         return this.findRelated(intent.params);
       case 'capture':
-        return this.captureFact(intent.params);
+        return this.captureLore(intent.params);
     }
   }
   
   async surfaceRelevant(context: Context) {
     // Check current file/project
-    // Find relevant facts
+    // Find relevant lores
     // Return with confidence scores
   }
 }
 ```
 
-### Project Detection
+### Realm Detection
 
 ```typescript
-// utils/project.ts
-export async function detectProject(startPath: string): Promise<Project> {
+// utils/realm.ts
+export async function detectRealm(startPath: string): Promise<Realm> {
   // Walk up to find .git
   const gitRoot = await findGitRoot(startPath);
   
@@ -154,14 +154,14 @@ export async function detectProject(startPath: string): Promise<Project> {
   const isMonorepo = await checkMonorepoIndicators(gitRoot);
   
   // Detect services if monorepo
-  const services = isMonorepo ? await detectServices(gitRoot) : [];
+  const provinces = isMonorepo ? await detectProvinces(gitRoot) : [];
   
-  // Create or update project
-  return db.upsertProject({
+  // Create or update realm
+  return db.upsertRealm({
     path: gitRoot,
     name: path.basename(gitRoot),
     is_monorepo: isMonorepo,
-    services
+    provinces
   });
 }
 ```
@@ -171,8 +171,8 @@ export async function detectProject(startPath: string): Promise<Project> {
 ### Unit Tests
 - Database operations
 - Pattern matching
-- Project detection
-- Fact inference
+- Realm detection
+- Lore inference
 
 ### Integration Tests  
 - CLI commands
@@ -181,7 +181,7 @@ export async function detectProject(startPath: string): Promise<Project> {
 - Full workflows
 
 ### Manual Testing Checklist
-- [ ] Add facts via CLI
+- [ ] Add lores via CLI
 - [ ] Search with various queries
 - [ ] Test in monorepo
 - [ ] Test in regular repo
@@ -202,17 +202,17 @@ export async function detectProject(startPath: string): Promise<Project> {
     "parseCommits": true,
     "ignorePaths": ["node_modules", ".git"]
   },
-  "projects": {
-    "additionalPaths": ["/special/project"]
+  "realms": {
+    "additionalPaths": ["/special/realm"]
   }
 }
 ```
 
 ## Performance Considerations
 
-1. **Indexes**: Create on project_id, type, status
+1. **Indexes**: Create on realm_id, type, status
 2. **FTS5**: Use for content and tag searching
-3. **Caching**: Cache project detection results
+3. **Caching**: Cache realm detection results
 4. **Batch Operations**: For bulk imports
 5. **Connection Pooling**: Single connection, WAL mode
 

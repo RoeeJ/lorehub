@@ -8,107 +8,107 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { Database } from '../db/database.js';
 import { getDbPath } from '../cli/utils/db-config.js';
-import type { Fact, FactType, RelationType } from '../core/types.js';
+import type { Lore, LoreType, RelationType } from '../core/types.js';
 
 // Tool schemas
-const SearchFactsSchema = z.object({
+const SearchLoresSchema = z.object({
   query: z.string().describe('Search query (supports wildcards * and ?)'),
-  project_path: z.string().optional().describe('Project path to search in (searches all projects if not specified)'),
-  type: z.enum(['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other']).optional(),
-  service: z.string().optional().describe('Filter by service (for monorepos)'),
+  realm_path: z.string().optional().describe('Realm path to search in (searches all realms if not specified)'),
+  type: z.enum(['decree', 'wisdom', 'belief', 'constraint', 'requirement', 'risk', 'quest', 'saga', 'story', 'anomaly', 'other']).optional(),
+  province: z.string().optional().describe('Filter by province (service in monorepos)'),
   limit: z.number().optional().default(50).describe('Maximum number of results'),
 });
 
-const ListFactsSchema = z.object({
-  project_path: z.string().optional().describe('Project path to list facts from (lists from all projects if not specified)'),
-  type: z.enum(['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other']).optional(),
-  service: z.string().optional().describe('Filter by service (for monorepos)'),
+const ListLoresSchema = z.object({
+  realm_path: z.string().optional().describe('Realm path to list lores from (lists from all realms if not specified)'),
+  type: z.enum(['decree', 'wisdom', 'belief', 'constraint', 'requirement', 'risk', 'quest', 'saga', 'story', 'anomaly', 'other']).optional(),
+  province: z.string().optional().describe('Filter by province (service in monorepos)'),
   limit: z.number().optional().default(20).describe('Maximum number of results'),
 });
 
-const GetFactSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to retrieve'),
+const GetLoreSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to retrieve'),
 });
 
-const ListProjectsSchema = z.object({});
+const ListRealmsSchema = z.object({});
 
-const CreateFactSchema = z.object({
-  project_path: z.string().describe('Project path where the fact should be created'),
-  content: z.string().describe('The main content of the fact'),
-  why: z.string().optional().describe('Additional context or reasoning for this fact'),
-  type: z.enum(['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other']).describe('The type of fact'),
-  services: z.array(z.string()).optional().describe('Services this fact applies to (for monorepos)'),
-  tags: z.array(z.string()).optional().describe('Tags for categorizing the fact'),
+const CreateLoreSchema = z.object({
+  realm_path: z.string().describe('Realm path where the lore should be created'),
+  content: z.string().describe('The main content of the lore'),
+  why: z.string().optional().describe('Additional context or reasoning for this lore'),
+  type: z.enum(['decree', 'wisdom', 'belief', 'constraint', 'requirement', 'risk', 'quest', 'saga', 'story', 'anomaly', 'other']).describe('The type of lore'),
+  provinces: z.array(z.string()).optional().describe('Provinces this lore applies to (services in monorepos)'),
+  sigils: z.array(z.string()).optional().describe('Sigils for categorizing the lore (tags)'),
   confidence: z.number().min(0).max(100).optional().default(80).describe('Confidence level (0-100)'),
-  source: z.object({
+  origin: z.object({
     type: z.enum(['manual', 'inferred', 'imported']).default('manual'),
     reference: z.string().default('mcp'),
     context: z.string().optional(),
   }).optional().default({ type: 'manual', reference: 'mcp' }),
 });
 
-const UpdateFactSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to update'),
-  content: z.string().optional().describe('Updated content of the fact'),
+const UpdateLoreSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to update'),
+  content: z.string().optional().describe('Updated content of the lore'),
   why: z.string().optional().describe('Updated context or reasoning'),
-  type: z.enum(['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other']).optional(),
-  services: z.array(z.string()).optional().describe('Updated services list'),
-  tags: z.array(z.string()).optional().describe('Updated tags list'),
+  type: z.enum(['decree', 'wisdom', 'belief', 'constraint', 'requirement', 'risk', 'quest', 'saga', 'story', 'anomaly', 'other']).optional(),
+  provinces: z.array(z.string()).optional().describe('Updated provinces list'),
+  sigils: z.array(z.string()).optional().describe('Updated sigils list'),
   confidence: z.number().min(0).max(100).optional().describe('Updated confidence level'),
-  status: z.enum(['active', 'completed', 'archived']).optional().describe('Updated status'),
-  source: z.object({
+  status: z.enum(['living', 'ancient', 'whispered', 'proclaimed', 'archived']).optional().describe('Updated status'),
+  origin: z.object({
     type: z.enum(['manual', 'inferred', 'imported']),
     reference: z.string(),
     context: z.string().optional(),
   }).optional(),
 });
 
-const DeleteFactSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to delete'),
+const DeleteLoreSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to delete'),
   confirm: z.boolean().describe('Must be true to confirm deletion'),
 });
 
-const ArchiveFactSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to archive'),
+const ArchiveLoreSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to archive'),
 });
 
-const RestoreFactSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to restore'),
+const RestoreLoreSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to restore'),
 });
 
 const CreateRelationSchema = z.object({
-  from_fact_id: z.string().describe('The ID of the source fact'),
-  to_fact_id: z.string().describe('The ID of the target fact'),
-  type: z.enum(['supersedes', 'contradicts', 'supports', 'depends_on', 'relates_to']).describe('The type of relationship'),
+  from_lore_id: z.string().describe('The ID of the source lore'),
+  to_lore_id: z.string().describe('The ID of the target lore'),
+  type: z.enum(['succeeds', 'challenges', 'supports', 'depends_on', 'bound_to']).describe('The type of relationship'),
   strength: z.number().min(0).max(1).optional().default(1.0).describe('Strength of the relationship (0.0-1.0)'),
   metadata: z.record(z.unknown()).optional().describe('Additional metadata for the relationship'),
 });
 
 const DeleteRelationSchema = z.object({
-  from_fact_id: z.string().describe('The ID of the source fact'),
-  to_fact_id: z.string().describe('The ID of the target fact'),
+  from_lore_id: z.string().describe('The ID of the source lore'),
+  to_lore_id: z.string().describe('The ID of the target lore'),
   type: z.enum(['supersedes', 'contradicts', 'supports', 'depends_on', 'relates_to']).describe('The type of relationship to delete'),
 });
 
 const ListRelationsSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to list relationships for'),
+  lore_id: z.string().describe('The ID of the lore to list relationships for'),
   direction: z.enum(['from', 'to', 'both']).optional().default('both').describe('Direction of relationships to list'),
 });
 
-const GetProjectStatsSchema = z.object({
-  project_path: z.string().describe('The project path to get statistics for'),
+const GetRealmStatsSchema = z.object({
+  realm_path: z.string().describe('The realm path to get statistics for'),
 });
 
-const SemanticSearchFactsSchema = z.object({
-  query: z.string().describe('Natural language query to find semantically similar facts'),
-  project_path: z.string().optional().describe('Project path to search in (searches all projects if not specified)'),
+const SemanticSearchLoresSchema = z.object({
+  query: z.string().describe('Natural language query to find semantically similar lores'),
+  realm_path: z.string().optional().describe('Realm path to search in (searches all realms if not specified)'),
   threshold: z.number().min(0).max(1).optional().default(0.7).describe('Similarity threshold (0-1, higher is more similar)'),
   limit: z.number().optional().default(20).describe('Maximum number of results'),
 });
 
-const FindSimilarFactsSchema = z.object({
-  fact_id: z.string().describe('The ID of the fact to find similar facts for'),
-  limit: z.number().optional().default(10).describe('Maximum number of similar facts to return'),
+const FindSimilarLoresSchema = z.object({
+  lore_id: z.string().describe('The ID of the lore to find similar lores for'),
+  limit: z.number().optional().default(10).describe('Maximum number of similar lores to return'),
   threshold: z.number().min(0).max(1).optional().default(0.5).describe('Similarity threshold (0-1)'),
 });
 
@@ -144,84 +144,84 @@ export class LoreHubServer {
       return {
         tools: [
           {
-            name: 'search_facts',
-            description: 'Search facts across all projects with optional filters',
+            name: 'search_lores',
+            description: 'Search lores across all realms with optional filters',
             inputSchema: {
               type: 'object',
               properties: {
                 query: { type: 'string', description: 'Search query (supports wildcards * and ?)' },
-                project_path: { type: 'string', description: 'Project path to search in (searches all projects if not specified)' },
+                realm_path: { type: 'string', description: 'Realm path to search in (searches all realms if not specified)' },
                 type: { 
                   type: 'string', 
-                  enum: ['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other'],
-                  description: 'Filter by fact type' 
+                  enum: ['decree', 'assumption', 'constraint', 'requirement', 'risk', 'lesson', 'quest', 'other'],
+                  description: 'Filter by lore type' 
                 },
-                service: { type: 'string', description: 'Filter by service (for monorepos)' },
+                province: { type: 'string', description: 'Filter by province (for monorepos)' },
                 limit: { type: 'number', description: 'Maximum number of results', default: 50 },
               },
               required: ['query'],
             },
           },
           {
-            name: 'list_facts',
-            description: 'List facts from all projects with optional filters',
+            name: 'list_lores',
+            description: 'List lores from all realms with optional filters',
             inputSchema: {
               type: 'object',
               properties: {
-                project_path: { type: 'string', description: 'Project path to list facts from (lists from all projects if not specified)' },
+                realm_path: { type: 'string', description: 'Realm path to list lores from (lists from all realms if not specified)' },
                 type: { 
                   type: 'string', 
-                  enum: ['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other'],
-                  description: 'Filter by fact type' 
+                  enum: ['decree', 'assumption', 'constraint', 'requirement', 'risk', 'lesson', 'quest', 'other'],
+                  description: 'Filter by lore type' 
                 },
-                service: { type: 'string', description: 'Filter by service (for monorepos)' },
+                province: { type: 'string', description: 'Filter by province (for monorepos)' },
                 limit: { type: 'number', description: 'Maximum number of results', default: 20 },
               },
               required: [],
             },
           },
           {
-            name: 'get_fact',
-            description: 'Get a specific fact by ID',
+            name: 'get_lore',
+            description: 'Get a specific lore by ID',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to retrieve' },
+                lore_id: { type: 'string', description: 'The ID of the lore to retrieve' },
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
           {
-            name: 'list_projects',
-            description: 'List all projects in the LoreHub database',
+            name: 'list_realms',
+            description: 'List all realms in the LoreHub database',
             inputSchema: {
               type: 'object',
               properties: {},
             },
           },
           {
-            name: 'create_fact',
-            description: 'Create a new fact in a project',
+            name: 'create_lore',
+            description: 'Create a new lore in a realm',
             inputSchema: {
               type: 'object',
               properties: {
-                project_path: { type: 'string', description: 'Project path where the fact should be created' },
-                content: { type: 'string', description: 'The main content of the fact' },
-                why: { type: 'string', description: 'Additional context or reasoning for this fact' },
+                realm_path: { type: 'string', description: 'Realm path where the lore should be created' },
+                content: { type: 'string', description: 'The main content of the lore' },
+                why: { type: 'string', description: 'Additional context or reasoning for this lore' },
                 type: { 
                   type: 'string', 
-                  enum: ['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other'],
-                  description: 'The type of fact' 
+                  enum: ['decree', 'assumption', 'constraint', 'requirement', 'risk', 'lesson', 'quest', 'other'],
+                  description: 'The type of lore' 
                 },
-                services: { 
+                provinces: { 
                   type: 'array', 
                   items: { type: 'string' },
-                  description: 'Services this fact applies to (for monorepos)' 
+                  description: 'Provinces this lore applies to (for monorepos)' 
                 },
-                tags: { 
+                sigils: { 
                   type: 'array', 
                   items: { type: 'string' },
-                  description: 'Tags for categorizing the fact' 
+                  description: 'Sigils for categorizing the lore' 
                 },
                 confidence: { 
                   type: 'number', 
@@ -230,7 +230,7 @@ export class LoreHubServer {
                   description: 'Confidence level (0-100)', 
                   default: 80 
                 },
-                source: {
+                origin: {
                   type: 'object',
                   properties: {
                     type: { 
@@ -247,32 +247,32 @@ export class LoreHubServer {
                   default: { type: 'manual', reference: 'mcp' }
                 }
               },
-              required: ['project_path', 'content', 'type'],
+              required: ['realm_path', 'content', 'type'],
             },
           },
           {
-            name: 'update_fact',
-            description: 'Update an existing fact',
+            name: 'update_lore',
+            description: 'Update an existing lore',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to update' },
-                content: { type: 'string', description: 'Updated content of the fact' },
+                lore_id: { type: 'string', description: 'The ID of the lore to update' },
+                content: { type: 'string', description: 'Updated content of the lore' },
                 why: { type: 'string', description: 'Updated context or reasoning' },
                 type: { 
                   type: 'string', 
-                  enum: ['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other'],
-                  description: 'Updated fact type' 
+                  enum: ['decree', 'assumption', 'constraint', 'requirement', 'risk', 'lesson', 'quest', 'other'],
+                  description: 'Updated lore type' 
                 },
-                services: { 
+                provinces: { 
                   type: 'array', 
                   items: { type: 'string' },
-                  description: 'Updated services list' 
+                  description: 'Updated provinces list' 
                 },
-                tags: { 
+                sigils: { 
                   type: 'array', 
                   items: { type: 'string' },
-                  description: 'Updated tags list' 
+                  description: 'Updated sigils list' 
                 },
                 confidence: { 
                   type: 'number', 
@@ -282,10 +282,10 @@ export class LoreHubServer {
                 },
                 status: {
                   type: 'string',
-                  enum: ['active', 'completed', 'archived'],
+                  enum: ['living', 'ancient', 'whispered', 'proclaimed', 'archived'],
                   description: 'Updated status'
                 },
-                source: {
+                origin: {
                   type: 'object',
                   properties: {
                     type: { 
@@ -297,51 +297,51 @@ export class LoreHubServer {
                   }
                 }
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
           {
-            name: 'delete_fact',
-            description: 'Permanently delete a fact (requires confirmation)',
+            name: 'delete_lore',
+            description: 'Permanently delete a lore (requires confirmation)',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to delete' },
+                lore_id: { type: 'string', description: 'The ID of the lore to delete' },
                 confirm: { type: 'boolean', description: 'Must be true to confirm deletion' },
               },
-              required: ['fact_id', 'confirm'],
+              required: ['lore_id', 'confirm'],
             },
           },
           {
-            name: 'archive_fact',
-            description: 'Archive a fact (soft delete)',
+            name: 'archive_lore',
+            description: 'Archive a lore (soft delete)',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to archive' },
+                lore_id: { type: 'string', description: 'The ID of the lore to archive' },
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
           {
-            name: 'restore_fact',
-            description: 'Restore an archived fact',
+            name: 'restore_lore',
+            description: 'Restore an archived lore',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to restore' },
+                lore_id: { type: 'string', description: 'The ID of the lore to restore' },
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
           {
             name: 'create_relation',
-            description: 'Create a relationship between two facts',
+            description: 'Create a relationship between two lores',
             inputSchema: {
               type: 'object',
               properties: {
-                from_fact_id: { type: 'string', description: 'The ID of the source fact' },
-                to_fact_id: { type: 'string', description: 'The ID of the target fact' },
+                from_lore_id: { type: 'string', description: 'The ID of the source lore' },
+                to_lore_id: { type: 'string', description: 'The ID of the target lore' },
                 type: { 
                   type: 'string', 
                   enum: ['supersedes', 'contradicts', 'supports', 'depends_on', 'relates_to'],
@@ -356,33 +356,33 @@ export class LoreHubServer {
                 },
                 metadata: { type: 'object', description: 'Additional metadata for the relationship' },
               },
-              required: ['from_fact_id', 'to_fact_id', 'type'],
+              required: ['from_lore_id', 'to_lore_id', 'type'],
             },
           },
           {
             name: 'delete_relation',
-            description: 'Delete a relationship between two facts',
+            description: 'Delete a relationship between two lores',
             inputSchema: {
               type: 'object',
               properties: {
-                from_fact_id: { type: 'string', description: 'The ID of the source fact' },
-                to_fact_id: { type: 'string', description: 'The ID of the target fact' },
+                from_lore_id: { type: 'string', description: 'The ID of the source lore' },
+                to_lore_id: { type: 'string', description: 'The ID of the target lore' },
                 type: { 
                   type: 'string', 
                   enum: ['supersedes', 'contradicts', 'supports', 'depends_on', 'relates_to'],
                   description: 'The type of relationship to delete' 
                 },
               },
-              required: ['from_fact_id', 'to_fact_id', 'type'],
+              required: ['from_lore_id', 'to_lore_id', 'type'],
             },
           },
           {
             name: 'list_relations',
-            description: 'List all relationships for a fact',
+            description: 'List all relationships for a lore',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to list relationships for' },
+                lore_id: { type: 'string', description: 'The ID of the lore to list relationships for' },
                 direction: { 
                   type: 'string',
                   enum: ['from', 'to', 'both'],
@@ -390,28 +390,28 @@ export class LoreHubServer {
                   default: 'both'
                 },
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
           {
-            name: 'get_project_stats',
-            description: 'Get detailed statistics about a project',
+            name: 'get_realm_stats',
+            description: 'Get detailed statistics about a realm',
             inputSchema: {
               type: 'object',
               properties: {
-                project_path: { type: 'string', description: 'The project path to get statistics for' },
+                realm_path: { type: 'string', description: 'The realm path to get statistics for' },
               },
-              required: ['project_path'],
+              required: ['realm_path'],
             },
           },
           {
-            name: 'semantic_search_facts',
-            description: 'Search facts using semantic similarity to find conceptually related facts',
+            name: 'semantic_search_lores',
+            description: 'Search lores using semantic similarity to find conceptually related lores',
             inputSchema: {
               type: 'object',
               properties: {
-                query: { type: 'string', description: 'Natural language query to find semantically similar facts' },
-                project_path: { type: 'string', description: 'Project path to search in (searches all projects if not specified)' },
+                query: { type: 'string', description: 'Natural language query to find semantically similar lores' },
+                realm_path: { type: 'string', description: 'Realm path to search in (searches all realms if not specified)' },
                 threshold: { type: 'number', description: 'Similarity threshold (0-1, higher is more similar)', default: 0.7, minimum: 0, maximum: 1 },
                 limit: { type: 'number', description: 'Maximum number of results', default: 20 },
               },
@@ -419,16 +419,16 @@ export class LoreHubServer {
             },
           },
           {
-            name: 'find_similar_facts',
-            description: 'Find facts similar to a given fact',
+            name: 'find_similar_lores',
+            description: 'Find lores similar to a given lore',
             inputSchema: {
               type: 'object',
               properties: {
-                fact_id: { type: 'string', description: 'The ID of the fact to find similar facts for' },
-                limit: { type: 'number', description: 'Maximum number of similar facts to return', default: 10 },
+                lore_id: { type: 'string', description: 'The ID of the lore to find similar lores for' },
+                limit: { type: 'number', description: 'Maximum number of similar lores to return', default: 10 },
                 threshold: { type: 'number', description: 'Similarity threshold (0-1)', default: 0.5, minimum: 0, maximum: 1 },
               },
-              required: ['fact_id'],
+              required: ['lore_id'],
             },
           },
         ],
@@ -438,86 +438,86 @@ export class LoreHubServer {
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       switch (request.params.name) {
-        case 'search_facts':
-          return this.searchFacts(request.params.arguments);
-        case 'list_facts':
-          return this.listFacts(request.params.arguments);
-        case 'get_fact':
-          return this.getFact(request.params.arguments);
-        case 'list_projects':
-          return this.listProjects(request.params.arguments);
-        case 'create_fact':
-          return this.createFact(request.params.arguments);
-        case 'update_fact':
-          return this.updateFact(request.params.arguments);
-        case 'delete_fact':
-          return this.deleteFact(request.params.arguments);
-        case 'archive_fact':
-          return this.archiveFact(request.params.arguments);
-        case 'restore_fact':
-          return this.restoreFact(request.params.arguments);
+        case 'search_lores':
+          return this.searchLores(request.params.arguments);
+        case 'list_lores':
+          return this.listLores(request.params.arguments);
+        case 'get_lore':
+          return this.getLore(request.params.arguments);
+        case 'list_realms':
+          return this.listRealms(request.params.arguments);
+        case 'create_lore':
+          return this.createLore(request.params.arguments);
+        case 'update_lore':
+          return this.updateLore(request.params.arguments);
+        case 'delete_lore':
+          return this.deleteLore(request.params.arguments);
+        case 'archive_lore':
+          return this.archiveLore(request.params.arguments);
+        case 'restore_lore':
+          return this.restoreLore(request.params.arguments);
         case 'create_relation':
           return this.createRelation(request.params.arguments);
         case 'delete_relation':
           return this.deleteRelation(request.params.arguments);
         case 'list_relations':
           return this.listRelations(request.params.arguments);
-        case 'get_project_stats':
-          return this.getProjectStats(request.params.arguments);
-        case 'semantic_search_facts':
-          return this.semanticSearchFacts(request.params.arguments);
-        case 'find_similar_facts':
-          return this.findSimilarFacts(request.params.arguments);
+        case 'get_realm_stats':
+          return this.getRealmStats(request.params.arguments);
+        case 'semantic_search_lores':
+          return this.semanticSearchLores(request.params.arguments);
+        case 'find_similar_lores':
+          return this.findSimilarLores(request.params.arguments);
         default:
           throw new Error(`Tool not found: ${request.params.name}`);
       }
     });
   }
 
-  private async searchFacts(args: unknown) {
-    const params = SearchFactsSchema.parse(args);
+  private async searchLores(args: unknown) {
+    const params = SearchLoresSchema.parse(args);
     
-    let projectsToSearch = this.db.listProjects();
-    let requestedProject = null;
+    let realmsToSearch = this.db.listRealms();
+    let requestedRealm = null;
     
-    // If specific project requested, filter to just that project
-    if (params.project_path) {
-      const project = this.db.findProjectByPath(params.project_path);
-      if (!project) {
-        throw new Error(`Project not found at path: ${params.project_path}`);
+    // If specific realm requested, filter to just that realm
+    if (params.realm_path) {
+      const realm = this.db.findRealmByPath(params.realm_path);
+      if (!realm) {
+        throw new Error(`Realm not found at path: ${params.realm_path}`);
       }
-      projectsToSearch = [project];
-      requestedProject = project;
+      realmsToSearch = [realm];
+      requestedRealm = realm;
     }
 
-    // Search across all selected projects
-    let allFacts: Array<Fact & { projectName: string; projectPath: string }> = [];
+    // Search across all selected realms
+    let allLores: Array<Lore & { realmName: string; realmPath: string }> = [];
     
-    for (const project of projectsToSearch) {
-      const facts = this.db.searchFacts(project.id, params.query);
-      allFacts.push(...facts.map(f => ({ 
-        ...f, 
-        projectName: project.name, 
-        projectPath: project.path 
+    for (const realm of realmsToSearch) {
+      const lores = this.db.searchLores(realm.id, params.query);
+      allLores.push(...lores.map(l => ({ 
+        ...l, 
+        realmName: realm.name, 
+        realmPath: realm.path 
       })));
     }
 
     // Apply filters
     if (params.type) {
-      allFacts = allFacts.filter(f => f.type === params.type);
+      allLores = allLores.filter(l => l.type === params.type);
     }
 
-    if (params.service) {
-      allFacts = allFacts.filter(f => f.services.includes(params.service!));
+    if (params.province) {
+      allLores = allLores.filter(l => l.provinces.includes(params.province!));
     }
 
     // Sort by date
-    allFacts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    allLores.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     // Apply limit
     const limit = params.limit || 50;
-    if (allFacts.length > limit) {
-      allFacts = allFacts.slice(0, limit);
+    if (allLores.length > limit) {
+      allLores = allLores.slice(0, limit);
     }
 
     return {
@@ -525,65 +525,65 @@ export class LoreHubServer {
         {
           type: 'text',
           text: JSON.stringify({
-            facts: allFacts.map(f => ({
-              ...this.formatFact(f),
-              project: {
-                name: f.projectName,
-                path: f.projectPath,
+            lores: allLores.map(l => ({
+              ...this.formatLore(l),
+              realm: {
+                name: l.realmName,
+                path: l.realmPath,
               },
             })),
-            total: allFacts.length,
-            searchedProjects: requestedProject ? 1 : projectsToSearch.length,
+            total: allLores.length,
+            searchedRealms: requestedRealm ? 1 : realmsToSearch.length,
           }, null, 2),
         },
       ],
     };
   }
 
-  private async listFacts(args: unknown) {
-    const params = ListFactsSchema.parse(args);
+  private async listLores(args: unknown) {
+    const params = ListLoresSchema.parse(args);
     
-    let projectsToList = this.db.listProjects();
-    let requestedProject = null;
+    let realmsToList = this.db.listRealms();
+    let requestedRealm = null;
     
-    // If specific project requested, filter to just that project
-    if (params.project_path) {
-      const project = this.db.findProjectByPath(params.project_path);
-      if (!project) {
-        throw new Error(`Project not found at path: ${params.project_path}`);
+    // If specific realm requested, filter to just that realm
+    if (params.realm_path) {
+      const realm = this.db.findRealmByPath(params.realm_path);
+      if (!realm) {
+        throw new Error(`Realm not found at path: ${params.realm_path}`);
       }
-      projectsToList = [project];
-      requestedProject = project;
+      realmsToList = [realm];
+      requestedRealm = realm;
     }
 
-    // List facts from all selected projects
-    let allFacts: Array<Fact & { projectName: string; projectPath: string }> = [];
+    // List lores from all selected realms
+    let allLores: Array<Lore & { realmName: string; realmPath: string }> = [];
     
-    for (const project of projectsToList) {
-      let facts: Fact[];
+    for (const realm of realmsToList) {
+      let lores: Lore[];
 
       if (params.type) {
-        facts = this.db.listFactsByType(project.id, params.type as FactType);
-      } else if (params.service) {
-        facts = this.db.listFactsByService(project.id, params.service);
+        lores = this.db.listLoresByType(realm.id, params.type as LoreType);
+      } else if (params.province) {
+        lores = this.db.listLoresByProvince(realm.id, params.province);
       } else {
-        facts = this.db.listFactsByProject(project.id);
+        lores = this.db.listLoresByRealm(realm.id);
       }
       
-      allFacts.push(...facts.map(f => ({ 
-        ...f, 
-        projectName: project.name, 
-        projectPath: project.path 
+      allLores.push(...lores.map(l => ({ 
+        ...l, 
+        realmName: realm.name, 
+        realmPath: realm.path 
       })));
     }
 
     // Sort by creation date descending
-    allFacts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    allLores.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     // Apply limit
     const limit = params.limit || 20;
-    if (allFacts.length > limit) {
-      allFacts = allFacts.slice(0, limit);
+    if (allLores.length > limit) {
+      allLores = allLores.slice(0, limit);
     }
 
     return {
@@ -591,41 +591,41 @@ export class LoreHubServer {
         {
           type: 'text',
           text: JSON.stringify({
-            facts: allFacts.map(f => ({
-              ...this.formatFact(f),
-              project: {
-                name: f.projectName,
-                path: f.projectPath,
+            lores: allLores.map(l => ({
+              ...this.formatLore(l),
+              realm: {
+                name: l.realmName,
+                path: l.realmPath,
               },
             })),
-            total: allFacts.length,
-            listedProjects: requestedProject ? 1 : projectsToList.length,
+            total: allLores.length,
+            listedRealms: requestedRealm ? 1 : realmsToList.length,
           }, null, 2),
         },
       ],
     };
   }
 
-  private async getFact(args: unknown) {
-    const params = GetFactSchema.parse(args);
+  private async getLore(args: unknown) {
+    const params = GetLoreSchema.parse(args);
     
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
 
-    const project = this.db.listProjects().find(p => p.id === fact.projectId);
+    const realm = this.db.listRealms().find(r => r.id === lore.realmId);
 
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            fact: this.formatFact(fact),
-            project: project ? {
-              id: project.id,
-              name: project.name,
-              path: project.path,
+            lore: this.formatLore(lore),
+            realm: realm ? {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
             } : undefined,
           }, null, 2),
         },
@@ -633,75 +633,75 @@ export class LoreHubServer {
     };
   }
 
-  private async listProjects(_args: unknown) {
-    const projects = this.db.listProjects();
+  private async listRealms(_args: unknown) {
+    const realms = this.db.listRealms();
 
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            projects: projects.map(p => ({
-              id: p.id,
-              name: p.name,
-              path: p.path,
-              isMonorepo: p.isMonorepo,
-              services: p.services,
-              lastSeen: p.lastSeen.toISOString(),
-              createdAt: p.createdAt.toISOString(),
-              factCount: this.db.listFactsByProject(p.id).length,
+            realms: realms.map(r => ({
+              id: r.id,
+              name: r.name,
+              path: r.path,
+              isMonorepo: r.isMonorepo,
+              provinces: r.provinces,
+              lastSeen: r.lastSeen.toISOString(),
+              createdAt: r.createdAt.toISOString(),
+              loreCount: this.db.getRealmLoreCount(r.id),
             })),
-            total: projects.length,
+            total: realms.length,
           }, null, 2),
         },
       ],
     };
   }
 
-  private formatFact(fact: Fact) {
+  private formatLore(lore: Lore) {
     return {
-      id: fact.id,
-      content: fact.content,
-      why: fact.why,
-      type: fact.type,
-      services: fact.services,
-      tags: fact.tags,
-      confidence: fact.confidence,
-      status: fact.status,
-      source: fact.source,
-      createdAt: fact.createdAt.toISOString(),
-      updatedAt: fact.updatedAt.toISOString(),
+      id: lore.id,
+      content: lore.content,
+      why: lore.why,
+      type: lore.type,
+      provinces: lore.provinces,
+      sigils: lore.sigils,
+      confidence: lore.confidence,
+      status: lore.status,
+      origin: lore.origin,
+      createdAt: lore.createdAt.toISOString(),
+      updatedAt: lore.updatedAt.toISOString(),
     };
   }
 
-  private async createFact(args: unknown) {
-    const params = CreateFactSchema.parse(args);
+  private async createLore(args: unknown) {
+    const params = CreateLoreSchema.parse(args);
     
-    // Find or create the project by path
-    let project = this.db.findProjectByPath(params.project_path);
+    // Find or create the realm by path
+    let realm = this.db.findRealmByPath(params.realm_path);
     
-    if (!project) {
-      // Auto-initialize the project if it doesn't exist
-      const projectName = params.project_path.split('/').pop() || 'unknown';
+    if (!realm) {
+      // Auto-initialize the realm if it doesn't exist
+      const realmName = params.realm_path.split('/').pop() || 'unknown';
       
-      project = this.db.createProject({
-        name: projectName,
-        path: params.project_path,
+      realm = this.db.createRealm({
+        name: realmName,
+        path: params.realm_path,
         isMonorepo: false,
-        services: params.services || [],
+        provinces: params.provinces || [],
       });
     }
 
-    // Create the fact
-    const fact = await this.db.createFact({
-      projectId: project.id,
+    // Create the lore
+    const lore = await this.db.createLore({
+      realmId: realm.id,
       content: params.content,
       why: params.why,
-      type: params.type as FactType,
-      services: params.services,
-      tags: params.tags,
+      type: params.type as LoreType,
+      provinces: params.provinces,
+      sigils: params.sigils,
       confidence: params.confidence,
-      source: params.source,
+      origin: params.origin,
     });
 
     return {
@@ -709,87 +709,87 @@ export class LoreHubServer {
         {
           type: 'text',
           text: JSON.stringify({
-            fact: this.formatFact(fact),
-            project: {
-              id: project.id,
-              name: project.name,
-              path: project.path,
-              created: !project.lastSeen || project.lastSeen.toISOString() === project.createdAt.toISOString(),
+            lore: this.formatLore(lore),
+            realm: {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
+              created: !realm.lastSeen || realm.lastSeen.toISOString() === realm.createdAt.toISOString(),
             },
-            message: !project.lastSeen || project.lastSeen.toISOString() === project.createdAt.toISOString()
-              ? 'Project initialized and fact created successfully'
-              : 'Fact created successfully',
+            message: !realm.lastSeen || realm.lastSeen.toISOString() === realm.createdAt.toISOString()
+              ? 'Realm initialized and lore created successfully'
+              : 'Lore created successfully',
           }, null, 2),
         },
       ],
     };
   }
 
-  private async updateFact(args: unknown) {
-    const params = UpdateFactSchema.parse(args);
+  private async updateLore(args: unknown) {
+    const params = UpdateLoreSchema.parse(args);
     
-    // Verify the fact exists before updating
-    const existingFact = this.db.getFactById(params.fact_id);
-    if (!existingFact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists before updating
+    const existingLore = this.db.findLore(params.lore_id);
+    if (!existingLore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
 
-    // Update the fact
-    const updatedFact = this.db.updateFact(params.fact_id, {
+    // Update the lore
+    const updatedLore = this.db.updateLore(params.lore_id, {
       content: params.content,
       why: params.why,
-      type: params.type as FactType | undefined,
-      services: params.services,
-      tags: params.tags,
+      type: params.type as LoreType | undefined,
+      provinces: params.provinces,
+      sigils: params.sigils,
       confidence: params.confidence,
       status: params.status as any,
-      source: params.source,
+      origin: params.origin,
     });
 
-    if (!updatedFact) {
-      throw new Error(`Failed to update fact with ID: ${params.fact_id}`);
+    if (!updatedLore) {
+      throw new Error(`Failed to update lore with ID: ${params.lore_id}`);
     }
 
-    // Get the project for context
-    const project = this.db.listProjects().find(p => p.id === updatedFact.projectId);
+    // Get the realm for context
+    const realm = this.db.listRealms().find(r => r.id === updatedLore.realmId);
 
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            fact: this.formatFact(updatedFact),
-            project: project ? {
-              id: project.id,
-              name: project.name,
-              path: project.path,
+            lore: this.formatLore(updatedLore),
+            realm: realm ? {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
             } : undefined,
-            message: 'Fact updated successfully',
+            message: 'Lore updated successfully',
           }, null, 2),
         },
       ],
     };
   }
 
-  private async deleteFact(args: unknown) {
-    const params = DeleteFactSchema.parse(args);
+  private async deleteLore(args: unknown) {
+    const params = DeleteLoreSchema.parse(args);
     
     // Require explicit confirmation
     if (!params.confirm) {
       throw new Error('Deletion must be confirmed by setting confirm: true');
     }
     
-    // Verify the fact exists before deleting
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists before deleting
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
 
-    // Get the project for context before deletion
-    const project = this.db.listProjects().find(p => p.id === fact.projectId);
+    // Get the realm for context before deletion
+    const realm = this.db.listRealms().find(r => r.id === lore.realmId);
 
-    // Delete the fact
-    this.db.deleteFact(params.fact_id);
+    // Delete the lore
+    this.db.deleteLore(params.lore_id);
 
     return {
       content: [
@@ -797,101 +797,101 @@ export class LoreHubServer {
           type: 'text',
           text: JSON.stringify({
             deleted: true,
-            fact_id: params.fact_id,
-            project: project ? {
-              id: project.id,
-              name: project.name,
-              path: project.path,
+            lore_id: params.lore_id,
+            realm: realm ? {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
             } : undefined,
-            message: 'Fact permanently deleted',
+            message: 'Lore permanently deleted',
           }, null, 2),
         },
       ],
     };
   }
 
-  private async archiveFact(args: unknown) {
-    const params = ArchiveFactSchema.parse(args);
+  private async archiveLore(args: unknown) {
+    const params = ArchiveLoreSchema.parse(args);
     
-    // Verify the fact exists before archiving
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists before archiving
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
 
     // Check if already archived
-    if (fact.status === 'archived') {
-      throw new Error('Fact is already archived');
+    if (lore.status === 'archived') {
+      throw new Error('Lore is already archived');
     }
 
-    // Archive the fact (soft delete)
-    this.db.softDeleteFact(params.fact_id);
+    // Archive the lore (soft delete)
+    this.db.softDeleteLore(params.lore_id);
     
-    // Get the updated fact
-    const archivedFact = this.db.getFactById(params.fact_id);
-    if (!archivedFact) {
-      throw new Error(`Failed to archive fact with ID: ${params.fact_id}`);
+    // Get the updated lore
+    const archivedLore = this.db.findLore(params.lore_id);
+    if (!archivedLore) {
+      throw new Error(`Failed to archive lore with ID: ${params.lore_id}`);
     }
 
-    // Get the project for context
-    const project = this.db.listProjects().find(p => p.id === archivedFact.projectId);
+    // Get the realm for context
+    const realm = this.db.listRealms().find(r => r.id === archivedLore.realmId);
 
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            fact: this.formatFact(archivedFact),
-            project: project ? {
-              id: project.id,
-              name: project.name,
-              path: project.path,
+            lore: this.formatLore(archivedLore),
+            realm: realm ? {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
             } : undefined,
-            message: 'Fact archived successfully',
+            message: 'Lore archived successfully',
           }, null, 2),
         },
       ],
     };
   }
 
-  private async restoreFact(args: unknown) {
-    const params = RestoreFactSchema.parse(args);
+  private async restoreLore(args: unknown) {
+    const params = RestoreLoreSchema.parse(args);
     
-    // Verify the fact exists before restoring
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists before restoring
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
 
     // Check if not archived
-    if (fact.status !== 'archived') {
-      throw new Error('Fact is not archived');
+    if (lore.status !== 'archived') {
+      throw new Error('Lore is not archived');
     }
 
-    // Restore the fact
-    this.db.restoreFact(params.fact_id);
+    // Restore the lore
+    this.db.restoreLore(params.lore_id);
     
-    // Get the updated fact
-    const restoredFact = this.db.getFactById(params.fact_id);
-    if (!restoredFact) {
-      throw new Error(`Failed to restore fact with ID: ${params.fact_id}`);
+    // Get the updated lore
+    const restoredLore = this.db.findLore(params.lore_id);
+    if (!restoredLore) {
+      throw new Error(`Failed to restore lore with ID: ${params.lore_id}`);
     }
 
-    // Get the project for context
-    const project = this.db.listProjects().find(p => p.id === restoredFact.projectId);
+    // Get the realm for context
+    const realm = this.db.listRealms().find(r => r.id === restoredLore.realmId);
 
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            fact: this.formatFact(restoredFact),
-            project: project ? {
-              id: project.id,
-              name: project.name,
-              path: project.path,
+            lore: this.formatLore(restoredLore),
+            realm: realm ? {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
             } : undefined,
-            message: 'Fact restored successfully',
+            message: 'Lore restored successfully',
           }, null, 2),
         },
       ],
@@ -901,26 +901,26 @@ export class LoreHubServer {
   private async createRelation(args: unknown) {
     const params = CreateRelationSchema.parse(args);
     
-    // Verify both facts exist
-    const fromFact = this.db.getFactById(params.from_fact_id);
-    if (!fromFact) {
-      throw new Error(`Source fact not found with ID: ${params.from_fact_id}`);
+    // Verify both lores exist
+    const fromLore = this.db.findLore(params.from_lore_id);
+    if (!fromLore) {
+      throw new Error(`Source lore not found with ID: ${params.from_lore_id}`);
     }
     
-    const toFact = this.db.getFactById(params.to_fact_id);
-    if (!toFact) {
-      throw new Error(`Target fact not found with ID: ${params.to_fact_id}`);
+    const toLore = this.db.findLore(params.to_lore_id);
+    if (!toLore) {
+      throw new Error(`Target lore not found with ID: ${params.to_lore_id}`);
     }
     
-    // Verify facts are in the same project
-    if (fromFact.projectId !== toFact.projectId) {
-      throw new Error('Cannot create relation between facts in different projects');
+    // Verify lores are in the same realm
+    if (fromLore.realmId !== toLore.realmId) {
+      throw new Error('Cannot create relation between lores in different realms');
     }
     
     // Create the relation
     const relation = this.db.createRelation({
-      fromFactId: params.from_fact_id,
-      toFactId: params.to_fact_id,
+      fromLoreId: params.from_lore_id,
+      toLoreId: params.to_lore_id,
       type: params.type as RelationType,
       strength: params.strength,
       metadata: params.metadata,
@@ -932,20 +932,20 @@ export class LoreHubServer {
           type: 'text',
           text: JSON.stringify({
             relation: {
-              fromFactId: relation.fromFactId,
-              toFactId: relation.toFactId,
+              fromLoreId: relation.fromLoreId,
+              toLoreId: relation.toLoreId,
               type: relation.type,
               strength: relation.strength,
               metadata: relation.metadata,
               createdAt: relation.createdAt.toISOString(),
             },
-            fromFact: {
-              id: fromFact.id,
-              content: fromFact.content,
+            fromLore: {
+              id: fromLore.id,
+              content: fromLore.content,
             },
-            toFact: {
-              id: toFact.id,
-              content: toFact.content,
+            toLore: {
+              id: toLore.id,
+              content: toLore.content,
             },
             message: 'Relation created successfully',
           }, null, 2),
@@ -957,19 +957,19 @@ export class LoreHubServer {
   private async deleteRelation(args: unknown) {
     const params = DeleteRelationSchema.parse(args);
     
-    // Verify the relation exists by checking if the facts exist
-    const fromFact = this.db.getFactById(params.from_fact_id);
-    if (!fromFact) {
-      throw new Error(`Source fact not found with ID: ${params.from_fact_id}`);
+    // Verify the relation exists by checking if the lores exist
+    const fromLore = this.db.findLore(params.from_lore_id);
+    if (!fromLore) {
+      throw new Error(`Source lore not found with ID: ${params.from_lore_id}`);
     }
     
-    const toFact = this.db.getFactById(params.to_fact_id);
-    if (!toFact) {
-      throw new Error(`Target fact not found with ID: ${params.to_fact_id}`);
+    const toLore = this.db.findLore(params.to_lore_id);
+    if (!toLore) {
+      throw new Error(`Target lore not found with ID: ${params.to_lore_id}`);
     }
     
     // Delete the relation
-    this.db.deleteRelation(params.from_fact_id, params.to_fact_id, params.type);
+    this.db.deleteRelation(params.from_lore_id, params.to_lore_id, params.type);
     
     return {
       content: [
@@ -977,8 +977,8 @@ export class LoreHubServer {
           type: 'text',
           text: JSON.stringify({
             deleted: true,
-            fromFactId: params.from_fact_id,
-            toFactId: params.to_fact_id,
+            fromLoreId: params.from_lore_id,
+            toLoreId: params.to_lore_id,
             type: params.type,
             message: 'Relation deleted successfully',
           }, null, 2),
@@ -990,38 +990,38 @@ export class LoreHubServer {
   private async listRelations(args: unknown) {
     const params = ListRelationsSchema.parse(args);
     
-    // Verify the fact exists
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
     
-    // Get all relations for the fact
-    const allRelations = this.db.listRelationsByFact(params.fact_id);
+    // Get all relations for the lore
+    const allRelations = this.db.listRelationsByLore(params.lore_id);
     
     // Filter by direction
     let relations = allRelations;
     if (params.direction === 'from') {
-      relations = allRelations.filter(r => r.fromFactId === params.fact_id);
+      relations = allRelations.filter(r => r.fromLoreId === params.lore_id);
     } else if (params.direction === 'to') {
-      relations = allRelations.filter(r => r.toFactId === params.fact_id);
+      relations = allRelations.filter(r => r.toLoreId === params.lore_id);
     }
     
-    // Get fact details for related facts
-    const relatedFactIds = new Set<string>();
+    // Get lore details for related lores
+    const relatedLoreIds = new Set<string>();
     relations.forEach(r => {
-      if (r.fromFactId !== params.fact_id) relatedFactIds.add(r.fromFactId);
-      if (r.toFactId !== params.fact_id) relatedFactIds.add(r.toFactId);
+      if (r.fromLoreId !== params.lore_id) relatedLoreIds.add(r.fromLoreId);
+      if (r.toLoreId !== params.lore_id) relatedLoreIds.add(r.toLoreId);
     });
     
-    const relatedFacts = new Map<string, any>();
-    for (const factId of relatedFactIds) {
-      const relatedFact = this.db.getFactById(factId);
-      if (relatedFact) {
-        relatedFacts.set(factId, {
-          id: relatedFact.id,
-          content: relatedFact.content,
-          type: relatedFact.type,
+    const relatedLores = new Map<string, any>();
+    for (const loreId of relatedLoreIds) {
+      const relatedLore = this.db.findLore(loreId);
+      if (relatedLore) {
+        relatedLores.set(loreId, {
+          id: relatedLore.id,
+          content: relatedLore.content,
+          type: relatedLore.type,
         });
       }
     }
@@ -1031,20 +1031,20 @@ export class LoreHubServer {
         {
           type: 'text',
           text: JSON.stringify({
-            fact: {
-              id: fact.id,
-              content: fact.content,
-              type: fact.type,
+            lore: {
+              id: lore.id,
+              content: lore.content,
+              type: lore.type,
             },
             relations: relations.map(r => ({
-              fromFactId: r.fromFactId,
-              toFactId: r.toFactId,
+              fromLoreId: r.fromLoreId,
+              toLoreId: r.toLoreId,
               type: r.type,
               strength: r.strength,
               metadata: r.metadata,
               createdAt: r.createdAt.toISOString(),
-              direction: r.fromFactId === params.fact_id ? 'outgoing' : 'incoming',
-              relatedFact: relatedFacts.get(r.fromFactId === params.fact_id ? r.toFactId : r.fromFactId),
+              direction: r.fromLoreId === params.lore_id ? 'outgoing' : 'incoming',
+              relatedLore: relatedLores.get(r.fromLoreId === params.lore_id ? r.toLoreId : r.fromLoreId),
             })),
             total: relations.length,
             direction: params.direction,
@@ -1054,52 +1054,52 @@ export class LoreHubServer {
     };
   }
 
-  private async getProjectStats(args: unknown) {
-    const params = GetProjectStatsSchema.parse(args);
+  private async getRealmStats(args: unknown) {
+    const params = GetRealmStatsSchema.parse(args);
     
-    // Find the project by path
-    const project = this.db.findProjectByPath(params.project_path);
-    if (!project) {
-      throw new Error(`Project not found at path: ${params.project_path}`);
+    // Find the realm by path
+    const realm = this.db.findRealmByPath(params.realm_path);
+    if (!realm) {
+      throw new Error(`Realm not found at path: ${params.realm_path}`);
     }
     
-    // Get all facts for the project
-    const allFacts = this.db.listFactsByProject(project.id);
+    // Get all lores for the realm
+    const allLores = this.db.listLoresByRealm(realm.id);
     
     // Calculate statistics
     const stats = {
-      totalFacts: allFacts.length,
-      factsByType: {} as Record<FactType, number>,
-      factsByStatus: {} as Record<string, number>,
-      factsByService: {} as Record<string, number>,
+      totalLores: allLores.length,
+      loresByType: {} as Record<LoreType, number>,
+      loresByStatus: {} as Record<string, number>,
+      loresByProvince: {} as Record<string, number>,
       averageConfidence: 0,
-      highConfidenceFacts: 0,
-      lowConfidenceFacts: 0,
-      recentFacts: [] as any[],
-      factGrowth: {
+      highConfidenceLores: 0,
+      lowConfidenceLores: 0,
+      recentLores: [] as any[],
+      loreGrowth: {
         lastWeek: 0,
         lastMonth: 0,
         lastQuarter: 0,
       },
-      topTags: [] as { tag: string; count: number }[],
+      topSigils: [] as { sigil: string; count: number }[],
       relationStats: {
         totalRelations: 0,
         byType: {} as Record<string, number>,
       },
     };
     
-    // Count facts by type
-    for (const type of ['decision', 'assumption', 'constraint', 'requirement', 'risk', 'learning', 'todo', 'other'] as FactType[]) {
-      stats.factsByType[type] = 0;
+    // Count lores by type
+    for (const type of ['decree', 'wisdom', 'belief', 'constraint', 'requirement', 'risk', 'quest', 'saga', 'story', 'anomaly', 'other'] as LoreType[]) {
+      stats.loresByType[type] = 0;
     }
     
-    // Count facts by status
-    for (const status of ['active', 'completed', 'archived']) {
-      stats.factsByStatus[status] = 0;
+    // Count lores by status
+    for (const status of ['living', 'ancient', 'whispered', 'proclaimed', 'archived']) {
+      stats.loresByStatus[status] = 0;
     }
     
     // Tag frequency map
-    const tagFrequency = new Map<string, number>();
+    const sigilFrequency = new Map<string, number>();
     
     // Time boundaries for growth metrics
     const now = new Date();
@@ -1109,73 +1109,73 @@ export class LoreHubServer {
     
     let totalConfidence = 0;
     
-    // Process facts
-    for (const fact of allFacts) {
+    // Process lores
+    for (const lore of allLores) {
       // Type counts
-      stats.factsByType[fact.type]++;
+      stats.loresByType[lore.type]++;
       
       // Status counts
-      const status = fact.status || 'active';
-      if (!(status in stats.factsByStatus)) {
-        stats.factsByStatus[status] = 0;
+      const status = lore.status || 'active';
+      if (!(status in stats.loresByStatus)) {
+        stats.loresByStatus[status] = 0;
       }
-      stats.factsByStatus[status]!++;
+      stats.loresByStatus[status]!++;
       
-      // Service counts
-      for (const service of fact.services) {
-        stats.factsByService[service] = (stats.factsByService[service] || 0) + 1;
+      // Province counts
+      for (const province of lore.provinces) {
+        stats.loresByProvince[province] = (stats.loresByProvince[province] || 0) + 1;
       }
       
       // Confidence metrics
-      totalConfidence += fact.confidence;
-      if (fact.confidence >= 90) stats.highConfidenceFacts++;
-      if (fact.confidence < 50) stats.lowConfidenceFacts++;
+      totalConfidence += lore.confidence;
+      if (lore.confidence >= 90) stats.highConfidenceLores++;
+      if (lore.confidence < 50) stats.lowConfidenceLores++;
       
-      // Tag frequency
-      for (const tag of fact.tags) {
-        tagFrequency.set(tag, (tagFrequency.get(tag) || 0) + 1);
+      // Sigil frequency
+      for (const sigil of lore.sigils) {
+        sigilFrequency.set(sigil, (sigilFrequency.get(sigil) || 0) + 1);
       }
       
       // Growth metrics
-      if (fact.createdAt >= oneWeekAgo) stats.factGrowth.lastWeek++;
-      if (fact.createdAt >= oneMonthAgo) stats.factGrowth.lastMonth++;
-      if (fact.createdAt >= threeMonthsAgo) stats.factGrowth.lastQuarter++;
+      if (lore.createdAt >= oneWeekAgo) stats.loreGrowth.lastWeek++;
+      if (lore.createdAt >= oneMonthAgo) stats.loreGrowth.lastMonth++;
+      if (lore.createdAt >= threeMonthsAgo) stats.loreGrowth.lastQuarter++;
     }
     
     // Calculate averages
-    if (allFacts.length > 0) {
-      stats.averageConfidence = Math.round(totalConfidence / allFacts.length);
+    if (allLores.length > 0) {
+      stats.averageConfidence = Math.round(totalConfidence / allLores.length);
     }
     
-    // Get top 10 tags
-    const sortedTags = Array.from(tagFrequency.entries())
+    // Get top 10 sigils
+    const sortedSigils = Array.from(sigilFrequency.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-      .map(([tag, count]) => ({ tag, count }));
-    stats.topTags = sortedTags;
+      .map(([sigil, count]) => ({ sigil, count }));
+    stats.topSigils = sortedSigils;
     
-    // Get 5 most recent facts
-    stats.recentFacts = allFacts
+    // Get 5 most recent lores
+    stats.recentLores = allLores
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 5)
-      .map(f => ({
-        id: f.id,
-        content: f.content,
-        type: f.type,
-        createdAt: f.createdAt.toISOString(),
+      .map(l => ({
+        id: l.id,
+        content: l.content,
+        type: l.type,
+        createdAt: l.createdAt.toISOString(),
       }));
     
     // Get relation statistics
     const allRelations = [];
-    for (const fact of allFacts) {
-      const relations = this.db.listRelationsByFact(fact.id);
+    for (const lore of allLores) {
+      const relations = this.db.listRelationsByLore(lore.id);
       allRelations.push(...relations);
     }
     
     // Deduplicate relations (since we're getting both directions)
     const uniqueRelations = new Map<string, any>();
     for (const rel of allRelations) {
-      const key = `${rel.fromFactId}-${rel.toFactId}-${rel.type}`;
+      const key = `${rel.fromLoreId}-${rel.toLoreId}-${rel.type}`;
       uniqueRelations.set(key, rel);
     }
     
@@ -1189,14 +1189,14 @@ export class LoreHubServer {
         {
           type: 'text',
           text: JSON.stringify({
-            project: {
-              id: project.id,
-              name: project.name,
-              path: project.path,
-              isMonorepo: project.isMonorepo,
-              services: project.services,
-              createdAt: project.createdAt.toISOString(),
-              lastSeen: project.lastSeen.toISOString(),
+            realm: {
+              id: realm.id,
+              name: realm.name,
+              path: realm.path,
+              isMonorepo: realm.isMonorepo,
+              provinces: realm.provinces,
+              createdAt: realm.createdAt.toISOString(),
+              lastSeen: realm.lastSeen.toISOString(),
             },
             statistics: stats,
           }, null, 2),
@@ -1205,27 +1205,27 @@ export class LoreHubServer {
     };
   }
 
-  private async semanticSearchFacts(args: unknown) {
-    const params = SemanticSearchFactsSchema.parse(args);
+  private async semanticSearchLores(args: unknown) {
+    const params = SemanticSearchLoresSchema.parse(args);
     
     try {
       // Perform semantic search
-      const results = await this.db.semanticSearchFacts(params.query, {
-        projectId: params.project_path ? this.db.findProjectByPath(params.project_path)?.id : undefined,
+      const results = await this.db.semanticSearchLores(params.query, {
+        realmId: params.realm_path ? this.db.findRealmByPath(params.realm_path)?.id : undefined,
         threshold: params.threshold,
         limit: params.limit,
         includeScore: true
       });
       
-      // Enrich results with project information
-      const enrichedResults = results.map(fact => {
-        const project = this.db.listProjects().find(p => p.id === fact.projectId);
+      // Enrich results with realm information
+      const enrichedResults = results.map(lore => {
+        const realm = this.db.listRealms().find(r => r.id === lore.realmId);
         return {
-          ...this.formatFact(fact),
-          similarity: fact.similarity,
-          project: project ? {
-            name: project.name,
-            path: project.path,
+          ...this.formatLore(lore),
+          similarity: lore.similarity,
+          realm: realm ? {
+            name: realm.name,
+            path: realm.path,
           } : undefined,
         };
       });
@@ -1235,7 +1235,7 @@ export class LoreHubServer {
           {
             type: 'text',
             text: JSON.stringify({
-              facts: enrichedResults,
+              lores: enrichedResults,
               total: enrichedResults.length,
               query: params.query,
               searchType: 'semantic',
@@ -1247,39 +1247,39 @@ export class LoreHubServer {
     } catch (error) {
       // Fallback to regular search if semantic search fails
       console.error('Semantic search failed, falling back to keyword search:', error);
-      return this.searchFacts({
+      return this.searchLores({
         query: params.query,
-        project_path: params.project_path,
+        realm_path: params.realm_path,
         limit: params.limit,
       });
     }
   }
 
-  private async findSimilarFacts(args: unknown) {
-    const params = FindSimilarFactsSchema.parse(args);
+  private async findSimilarLores(args: unknown) {
+    const params = FindSimilarLoresSchema.parse(args);
     
-    // Verify the fact exists
-    const fact = this.db.getFactById(params.fact_id);
-    if (!fact) {
-      throw new Error(`Fact not found with ID: ${params.fact_id}`);
+    // Verify the lore exists
+    const lore = this.db.findLore(params.lore_id);
+    if (!lore) {
+      throw new Error(`Lore not found with ID: ${params.lore_id}`);
     }
     
     try {
-      // Find similar facts
-      const similarFacts = await this.db.findSimilarFacts(params.fact_id, {
+      // Find similar lores
+      const similarLores = await this.db.findSimilarLores(params.lore_id, {
         limit: params.limit,
         threshold: params.threshold
       });
       
-      // Enrich results with project information
-      const enrichedResults = similarFacts.map(similarFact => {
-        const project = this.db.listProjects().find(p => p.id === similarFact.projectId);
+      // Enrich results with realm information
+      const enrichedResults = similarLores.map(similarLore => {
+        const realm = this.db.listRealms().find(r => r.id === similarLore.realmId);
         return {
-          ...this.formatFact(similarFact),
-          similarity: similarFact.similarity,
-          project: project ? {
-            name: project.name,
-            path: project.path,
+          ...this.formatLore(similarLore),
+          similarity: similarLore.similarity,
+          realm: realm ? {
+            name: realm.name,
+            path: realm.path,
           } : undefined,
         };
       });
@@ -1289,11 +1289,11 @@ export class LoreHubServer {
           {
             type: 'text',
             text: JSON.stringify({
-              originalFact: {
-                ...this.formatFact(fact),
-                project: this.db.listProjects().find(p => p.id === fact.projectId)?.name,
+              originalLore: {
+                ...this.formatLore(lore),
+                realm: this.db.listRealms().find(r => r.id === lore.realmId)?.name,
               },
-              similarFacts: enrichedResults,
+              similarLores: enrichedResults,
               total: enrichedResults.length,
               threshold: params.threshold,
             }, null, 2),
@@ -1301,8 +1301,8 @@ export class LoreHubServer {
         ],
       };
     } catch (error) {
-      console.error('Finding similar facts failed:', error);
-      throw new Error(`Failed to find similar facts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Finding similar lores failed:', error);
+      throw new Error(`Failed to find similar lores: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -1320,64 +1320,64 @@ export class LoreHubServer {
     // Return the tools directly for testing
     return [
       {
-        name: 'search_facts',
-        description: 'Search facts across all projects with optional filters',
+        name: 'search_lores',
+        description: 'Search lores across all realms with optional filters',
       },
       {
-        name: 'list_facts',
-        description: 'List facts from all projects with optional filters',
+        name: 'list_lores',
+        description: 'List lores from all realms with optional filters',
       },
       {
-        name: 'get_fact',
-        description: 'Get a specific fact by ID',
+        name: 'get_lore',
+        description: 'Get a specific lore by ID',
       },
       {
-        name: 'list_projects',
-        description: 'List all projects in the LoreHub database',
+        name: 'list_realms',
+        description: 'List all realms in the LoreHub database',
       },
       {
-        name: 'create_fact',
-        description: 'Create a new fact in a project',
+        name: 'create_lore',
+        description: 'Create a new lore in a realm',
       },
       {
-        name: 'update_fact',
-        description: 'Update an existing fact',
+        name: 'update_lore',
+        description: 'Update an existing lore',
       },
       {
-        name: 'delete_fact',
-        description: 'Permanently delete a fact (requires confirmation)',
+        name: 'delete_lore',
+        description: 'Permanently delete a lore (requires confirmation)',
       },
       {
-        name: 'archive_fact',
-        description: 'Archive a fact (soft delete)',
+        name: 'archive_lore',
+        description: 'Archive a lore (soft delete)',
       },
       {
-        name: 'restore_fact',
-        description: 'Restore an archived fact',
+        name: 'restore_lore',
+        description: 'Restore an archived lore',
       },
       {
         name: 'create_relation',
-        description: 'Create a relationship between two facts',
+        description: 'Create a relationship between two lores',
       },
       {
         name: 'delete_relation',
-        description: 'Delete a relationship between two facts',
+        description: 'Delete a relationship between two lores',
       },
       {
         name: 'list_relations',
-        description: 'List all relationships for a fact',
+        description: 'List all relationships for a lore',
       },
       {
-        name: 'get_project_stats',
-        description: 'Get detailed statistics about a project',
+        name: 'get_realm_stats',
+        description: 'Get detailed statistics about a realm',
       },
       {
-        name: 'semantic_search_facts',
-        description: 'Search facts using semantic similarity to find conceptually related facts',
+        name: 'semantic_search_lores',
+        description: 'Search lores using semantic similarity to find conceptually related lores',
       },
       {
-        name: 'find_similar_facts',
-        description: 'Find facts similar to a given fact',
+        name: 'find_similar_lores',
+        description: 'Find lores similar to a given lore',
       },
     ];
   }
@@ -1385,32 +1385,32 @@ export class LoreHubServer {
   async callTool(name: string, args: any) {
     // Direct implementation for testing
     switch (name) {
-      case 'search_facts':
-        const searchResult = await this.searchFacts(args);
+      case 'search_lores':
+        const searchResult = await this.searchLores(args);
         return JSON.parse(searchResult.content[0]!.text!);
-      case 'list_facts':
-        const listResult = await this.listFacts(args);
+      case 'list_lores':
+        const listResult = await this.listLores(args);
         return JSON.parse(listResult.content[0]!.text!);
-      case 'get_fact':
-        const getResult = await this.getFact(args);
+      case 'get_lore':
+        const getResult = await this.getLore(args);
         return JSON.parse(getResult.content[0]!.text!);
-      case 'list_projects':
-        const projectsResult = await this.listProjects(args);
-        return JSON.parse(projectsResult.content[0]!.text!);
-      case 'create_fact':
-        const createResult = await this.createFact(args);
+      case 'list_realms':
+        const realmsResult = await this.listRealms(args);
+        return JSON.parse(realmsResult.content[0]!.text!);
+      case 'create_lore':
+        const createResult = await this.createLore(args);
         return JSON.parse(createResult.content[0]!.text!);
-      case 'update_fact':
-        const updateResult = await this.updateFact(args);
+      case 'update_lore':
+        const updateResult = await this.updateLore(args);
         return JSON.parse(updateResult.content[0]!.text!);
-      case 'delete_fact':
-        const deleteResult = await this.deleteFact(args);
+      case 'delete_lore':
+        const deleteResult = await this.deleteLore(args);
         return JSON.parse(deleteResult.content[0]!.text!);
-      case 'archive_fact':
-        const archiveResult = await this.archiveFact(args);
+      case 'archive_lore':
+        const archiveResult = await this.archiveLore(args);
         return JSON.parse(archiveResult.content[0]!.text!);
-      case 'restore_fact':
-        const restoreResult = await this.restoreFact(args);
+      case 'restore_lore':
+        const restoreResult = await this.restoreLore(args);
         return JSON.parse(restoreResult.content[0]!.text!);
       case 'create_relation':
         const createRelResult = await this.createRelation(args);
@@ -1421,14 +1421,14 @@ export class LoreHubServer {
       case 'list_relations':
         const listRelResult = await this.listRelations(args);
         return JSON.parse(listRelResult.content[0]!.text!);
-      case 'get_project_stats':
-        const statsResult = await this.getProjectStats(args);
+      case 'get_realm_stats':
+        const statsResult = await this.getRealmStats(args);
         return JSON.parse(statsResult.content[0]!.text!);
-      case 'semantic_search_facts':
-        const semanticResult = await this.semanticSearchFacts(args);
+      case 'semantic_search_lores':
+        const semanticResult = await this.semanticSearchLores(args);
         return JSON.parse(semanticResult.content[0]!.text!);
-      case 'find_similar_facts':
-        const similarResult = await this.findSimilarFacts(args);
+      case 'find_similar_lores':
+        const similarResult = await this.findSimilarLores(args);
         return JSON.parse(similarResult.content[0]!.text!);
       default:
         throw new Error(`Tool not found: ${name}`);

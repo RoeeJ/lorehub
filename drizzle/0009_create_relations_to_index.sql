@@ -1,0 +1,1 @@
+CREATE INDEX "idx_lore_relations_to" ON "lore_relations" ("to_lore_id");

@@ -33,33 +33,33 @@ npm install -g lorehub
 
 In Claude Desktop, type:
 ```
-Can you list all projects in my LoreHub database?
+Can you list all realms in my LoreHub database?
 ```
 
-Claude should use the `list_projects` tool and show your projects.
+Claude should use the `list_realms` tool and show your realms.
 
 ## Available Tools
 
-- **search_facts** - Search with wildcards (* and ?)
+- **search_lores** - Search with wildcards (* and ?)
   ```
-  "Find all database decisions"
-  "Search for *cache* facts"
-  ```
-
-- **list_facts** - List facts with filters
-  ```
-  "Show me all constraints for this project"
-  "List recent learnings"
+  "Find all database decrees"
+  "Search for *cache* lores"
   ```
 
-- **get_fact** - Get specific fact details
+- **list_lores** - List lores with filters
   ```
-  "Get details for fact ID fact-123"
+  "Show me all constraints for this realm"
+  "List recent lessons"
   ```
 
-- **list_projects** - See all projects
+- **get_lore** - Get specific lore details
   ```
-  "What projects are in LoreHub?"
+  "Get details for lore ID lore-123"
+  ```
+
+- **list_realms** - See all realms
+  ```
+  "What realms are in LoreHub?"
   ```
 
 ## Common Commands
@@ -67,22 +67,22 @@ Claude should use the `list_projects` tool and show your projects.
 ### For Development
 ```
 "What database did we choose and why?"
-"Are there any constraints about adding new services?"
-"What have we learned about performance issues?"
-"Search for all authentication-related decisions"
+"Are there any constraints about adding new provinces?"
+"What lessons have we learned about performance issues?"
+"Search for all authentication-related decrees"
 ```
 
 ### For Code Review
 ```
-"Check if this approach aligns with our architecture decisions"
+"Check if this approach aligns with our architecture decrees"
 "Find any constraints related to this feature"
-"What past learnings apply to this change?"
+"What past lessons apply to this change?"
 ```
 
 ### For Planning
 ```
-"What are all the decisions for the API service?"
-"List all TODOs for this project"
+"What are all the decrees for the API province?"
+"List all quests for this realm"
 "What assumptions have we made about scaling?"
 ```
 
@@ -93,15 +93,15 @@ Claude should use the `list_projects` tool and show your projects.
 2. Restart Claude Desktop (quit and reopen)
 3. Try running `lorehub-mcp` in terminal to check for errors
 
-### No facts found?
-1. Make sure you have facts in your database:
+### No lores found?
+1. Make sure you have lores in your database:
    ```bash
    lh list
    ```
-2. Check the project path matches your current project
+2. Check the realm path matches your current realm
 
 ## Next Steps
 
 - Read the full [MCP Integration Guide](./MCP_INTEGRATION.md)
-- Start capturing facts: `lh add`
+- Start capturing lores: `lh add`
 - Configure your IDE (Cursor, VS Code + Continue)

@@ -2,32 +2,32 @@ import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 import { execSync } from 'child_process';
 
-export interface ProjectInfo {
+export interface RealmInfo {
   name: string;
   path: string;
   gitRemote?: string;
   isMonorepo: boolean;
-  services: string[];
+  provinces: string[];
 }
 
-export async function getProjectInfo(projectPath: string): Promise<ProjectInfo> {
-  const name = await detectProjectName(projectPath);
-  const gitRemote = detectGitRemote(projectPath);
-  const { isMonorepo, services } = await detectMonorepoInfo(projectPath);
+export async function getRealmInfo(realmPath: string): Promise<RealmInfo> {
+  const name = await detectProjectName(realmPath);
+  const gitRemote = detectGitRemote(realmPath);
+  const { isMonorepo, provinces } = await detectMonorepoInfo(realmPath);
 
   return {
     name,
-    path: projectPath,
+    path: realmPath,
     gitRemote,
     isMonorepo,
-    services,
+    provinces,
   };
 }
 
-async function detectProjectName(projectPath: string): Promise<string> {
+async function detectProjectName(realmPath: string): Promise<string> {
   // Try package.json first
   try {
-    const packageJsonPath = join(projectPath, 'package.json');
+    const packageJsonPath = join(realmPath, 'package.json');
     const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
     if (packageJson.name) {
       return packageJson.name;
@@ -36,9 +36,9 @@ async function detectProjectName(projectPath: string): Promise<string> {
     // Ignore error, try other methods
   }
 
-  // Try Cargo.toml for Rust projects
+  // Try Cargo.toml for Rust realms
   try {
-    const cargoTomlPath = join(projectPath, 'Cargo.toml');
+    const cargoTomlPath = join(realmPath, 'Cargo.toml');
     const cargoToml = await readFile(cargoTomlPath, 'utf-8');
     const match = cargoToml.match(/name\s*=\s*"([^"]+)"/);
     if (match?.[1]) {
@@ -49,13 +49,13 @@ async function detectProjectName(projectPath: string): Promise<string> {
   }
 
   // Default to directory name
-  return basename(projectPath);
+  return basename(realmPath);
 }
 
-function detectGitRemote(projectPath: string): string | undefined {
+function detectGitRemote(realmPath: string): string | undefined {
   try {
     const remote = execSync('git remote get-url origin', {
-      cwd: projectPath,
+      cwd: realmPath,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     }).trim();
@@ -66,53 +66,53 @@ function detectGitRemote(projectPath: string): string | undefined {
   }
 }
 
-async function detectMonorepoInfo(projectPath: string): Promise<{ isMonorepo: boolean; services: string[] }> {
+async function detectMonorepoInfo(realmPath: string): Promise<{ isMonorepo: boolean; provinces: string[] }> {
   // Check for common monorepo indicators
   try {
-    const packageJsonPath = join(projectPath, 'package.json');
+    const packageJsonPath = join(realmPath, 'package.json');
     const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8'));
     
     // Check for workspace configuration (npm/yarn/pnpm)
     if (packageJson.workspaces) {
-      const services = await detectWorkspaceServices(projectPath, packageJson.workspaces);
-      return { isMonorepo: true, services };
+      const provinces = await detectWorkspaceProvinces(realmPath, packageJson.workspaces);
+      return { isMonorepo: true, provinces };
     }
     
     // Check for lerna
     try {
-      const lernaPath = join(projectPath, 'lerna.json');
+      const lernaPath = join(realmPath, 'lerna.json');
       await readFile(lernaPath, 'utf-8');
-      const services = await detectLernaServices(projectPath);
-      return { isMonorepo: true, services };
+      const provinces = await detectLernaServices(realmPath);
+      return { isMonorepo: true, provinces };
     } catch {
       // Not a lerna monorepo
     }
     
     // Check for nx
-    if (packageJson.nx || await fileExists(join(projectPath, 'nx.json'))) {
-      const services = await detectNxServices(projectPath);
-      return { isMonorepo: true, services };
+    if (packageJson.nx || await fileExists(join(realmPath, 'nx.json'))) {
+      const provinces = await detectNxServices(realmPath);
+      return { isMonorepo: true, provinces };
     }
   } catch {
-    // Not a JS/TS project or no package.json
+    // Not a JS/TS realm or no package.json
   }
 
   // Check for Cargo workspace (Rust)
   try {
-    const cargoTomlPath = join(projectPath, 'Cargo.toml');
+    const cargoTomlPath = join(realmPath, 'Cargo.toml');
     const cargoToml = await readFile(cargoTomlPath, 'utf-8');
     if (cargoToml.includes('[workspace]')) {
-      const services = await detectCargoWorkspaceMembers(projectPath, cargoToml);
-      return { isMonorepo: true, services };
+      const provinces = await detectCargoWorkspaceMembers(realmPath, cargoToml);
+      return { isMonorepo: true, provinces };
     }
   } catch {
-    // Not a Rust project
+    // Not a Rust realm
   }
 
-  return { isMonorepo: false, services: [] };
+  return { isMonorepo: false, provinces: [] };
 }
 
-async function detectWorkspaceServices(projectPath: string, workspaces: string[] | { packages: string[] }): Promise<string[]> {
+async function detectWorkspaceProvinces(realmPath: string, workspaces: string[] | { packages: string[] }): Promise<string[]> {
   const patterns = Array.isArray(workspaces) ? workspaces : workspaces.packages || [];
   const services: string[] = [];
   
@@ -123,7 +123,7 @@ async function detectWorkspaceServices(projectPath: string, workspaces: string[]
       const baseDir = pattern.replace('/*', '').replace('/**', '');
       try {
         const { readdirSync } = await import('fs');
-        const dirs = readdirSync(join(projectPath, baseDir), { withFileTypes: true })
+        const dirs = readdirSync(join(realmPath, baseDir), { withFileTypes: true })
           .filter(dirent => dirent.isDirectory())
           .map(dirent => dirent.name);
         services.push(...dirs);
@@ -138,10 +138,10 @@ async function detectWorkspaceServices(projectPath: string, workspaces: string[]
   return services;
 }
 
-async function detectLernaServices(projectPath: string): Promise<string[]> {
+async function detectLernaServices(realmPath: string): Promise<string[]> {
   try {
     const { readdirSync } = await import('fs');
-    const packages = readdirSync(join(projectPath, 'packages'), { withFileTypes: true })
+    const packages = readdirSync(join(realmPath, 'packages'), { withFileTypes: true })
       .filter(dirent => dirent.isDirectory())
       .map(dirent => dirent.name);
     return packages;
@@ -150,14 +150,14 @@ async function detectLernaServices(projectPath: string): Promise<string[]> {
   }
 }
 
-async function detectNxServices(projectPath: string): Promise<string[]> {
+async function detectNxServices(realmPath: string): Promise<string[]> {
   // Simplified - in production you'd parse nx.json or workspace.json
   const services: string[] = [];
   
   for (const dir of ['apps', 'libs', 'packages']) {
     try {
       const { readdirSync } = await import('fs');
-      const dirs = readdirSync(join(projectPath, dir), { withFileTypes: true })
+      const dirs = readdirSync(join(realmPath, dir), { withFileTypes: true })
         .filter(dirent => dirent.isDirectory())
         .map(dirent => dirent.name);
       services.push(...dirs);

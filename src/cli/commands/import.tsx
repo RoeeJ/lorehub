@@ -4,7 +4,7 @@ import { Database } from '../../db/database.js';
 import { getDbPath } from '../utils/db-config.js';
 import { Progress } from '../components/Progress.js';
 import { ErrorMessage } from '../components/ErrorMessage.js';
-import type { CreateFactInput, CreateProjectInput } from '../../core/types.js';
+import type { CreateLoreInput, CreateRealmInput } from '../../core/types.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -16,25 +16,25 @@ interface ImportProps {
 interface ImportData {
   version: string;
   exportDate: string;
-  projects: Array<{
+  realms: Array<{
     id: string;
     name: string;
     path: string;
     gitRemote: string | null;
     isMonorepo: boolean;
-    services: string[];
+    provinces: string[];
   }>;
-  facts: Array<{
+  lores: Array<{
     id: string;
-    projectId: string;
+    realmId: string;
     content: string;
     type: string;
     status: string;
     confidence: number;
     why: string | null;
-    services: string[];
-    tags: string[];
-    source: any;
+    provinces: string[];
+    sigils: string[];
+    origin: any;
     createdAt: string;
     updatedAt: string;
   }>;
@@ -45,7 +45,7 @@ function Import({ inputFile, merge = false }: ImportProps) {
   const [error, setError] = useState<Error | null>(null);
   const [importedCount, setImportedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [summary, setSummary] = useState<{ projects: number; facts: number } | null>(null);
+  const [summary, setSummary] = useState<{ realms: number; lores: number } | null>(null);
 
   useEffect(() => {
     async function performImport() {
@@ -62,11 +62,11 @@ function Import({ inputFile, merge = false }: ImportProps) {
         }
 
         // Validate import data
-        if (!importData.version || !importData.projects || !importData.facts) {
+        if (!importData.version || !importData.realms || !importData.lores) {
           throw new Error('Invalid import file format. Missing required fields.');
         }
 
-        setTotalCount(importData.projects.length + importData.facts.length);
+        setTotalCount(importData.realms.length + importData.lores.length);
         setStatus('importing');
 
         const dbPath = getDbPath();
@@ -74,77 +74,77 @@ function Import({ inputFile, merge = false }: ImportProps) {
 
         // Clear existing data if not merging
         if (!merge) {
-          // Get all existing projects and delete their facts
-          const existingProjects = db.listProjects();
-          for (const project of existingProjects) {
-            const facts = db.listFactsByProject(project.id);
-            for (const fact of facts) {
-              db.deleteFact(fact.id);
+          // Get all existing realms and delete their lores
+          const existingRealms = db.listRealms();
+          for (const realm of existingRealms) {
+            const lores = db.listLoresByRealm(realm.id);
+            for (const lore of lores) {
+              db.deleteLore(lore.id);
             }
           }
         }
 
-        // Import projects
-        const projectIdMap = new Map<string, string>(); // old ID -> new ID
-        let importedProjects = 0;
+        // Import realms
+        const realmIdMap = new Map<string, string>(); // old ID -> new ID
+        let importedRealms = 0;
         
-        for (const project of importData.projects) {
+        for (const realm of importData.realms) {
           setImportedCount(prev => prev + 1);
           
-          // Check if project already exists
-          let existingProject = db.findProjectByPath(project.path);
+          // Check if realm already exists
+          let existingRealm = db.findRealmByPath(realm.path);
           
-          if (existingProject && merge) {
-            // Update existing project
-            projectIdMap.set(project.id, existingProject.id);
+          if (existingRealm && merge) {
+            // Update existing realm
+            realmIdMap.set(realm.id, existingRealm.id);
           } else {
-            // Create new project
-            const newProject = db.createProject({
-              name: project.name,
-              path: project.path,
-              gitRemote: project.gitRemote === null ? undefined : project.gitRemote,
-              isMonorepo: project.isMonorepo,
-              services: project.services,
+            // Create new realm
+            const newRealm = db.createRealm({
+              name: realm.name,
+              path: realm.path,
+              gitRemote: realm.gitRemote === null ? undefined : realm.gitRemote,
+              isMonorepo: realm.isMonorepo,
+              provinces: realm.provinces,
             });
-            projectIdMap.set(project.id, newProject.id);
-            importedProjects++;
+            realmIdMap.set(realm.id, newRealm.id);
+            importedRealms++;
           }
         }
 
-        // Import facts
-        let importedFacts = 0;
+        // Import lores
+        let importedLores = 0;
         
-        for (const fact of importData.facts) {
+        for (const lore of importData.lores) {
           setImportedCount(prev => prev + 1);
           
-          const newProjectId = projectIdMap.get(fact.projectId);
-          if (!newProjectId) {
-            console.warn(`Skipping fact: project ${fact.projectId} not found`);
+          const newRealmId = realmIdMap.get(lore.realmId);
+          if (!newRealmId) {
+            console.warn(`Skipping lore: realm ${lore.realmId} not found`);
             continue;
           }
 
-          const factInput: CreateFactInput = {
-            projectId: newProjectId,
-            content: fact.content,
-            type: fact.type as any,
-            status: fact.status as any,
-            confidence: fact.confidence,
-            why: fact.why === null ? undefined : fact.why,
-            services: fact.services,
-            tags: fact.tags,
-            source: fact.source,
+          const loreInput: CreateLoreInput = {
+            realmId: newRealmId,
+            content: lore.content,
+            type: lore.type as any,
+            status: lore.status as any,
+            confidence: lore.confidence,
+            why: lore.why === null ? undefined : lore.why,
+            provinces: lore.provinces,
+            sigils: lore.sigils,
+            origin: lore.origin,
           };
 
           try {
-            db.createFact(factInput);
-            importedFacts++;
+            await db.createLore(loreInput);
+            importedLores++;
           } catch (err) {
-            console.warn(`Failed to import fact: ${err}`);
+            console.warn(`Failed to import lore: ${err}`);
           }
         }
 
         db.close();
-        setSummary({ projects: importedProjects, facts: importedFacts });
+        setSummary({ realms: importedRealms, lores: importedLores });
         setStatus('success');
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Import failed'));
@@ -189,10 +189,10 @@ function Import({ inputFile, merge = false }: ImportProps) {
         <Text color="green" bold>✓ Import completed successfully!</Text>
         <Text>Imported from: {path.resolve(inputFile)}</Text>
         <Box marginTop={1}>
-          <Text>• Projects: {summary.projects}</Text>
+          <Text>• Realms: {summary.realms}</Text>
         </Box>
         <Box>
-          <Text>• Facts: {summary.facts}</Text>
+          <Text>• Lores: {summary.lores}</Text>
         </Box>
         {merge && (
           <Box marginTop={1}>

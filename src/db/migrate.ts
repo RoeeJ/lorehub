@@ -12,7 +12,7 @@ async function runMigrations() {
   // Check if this is an existing database
   const existingTables = sqlite.prepare(`
     SELECT name FROM sqlite_master 
-    WHERE type='table' AND name IN ('projects', 'facts', 'relations')
+    WHERE type='table' AND name IN ('realms', 'lores', 'relations')
   `).all();
 
   if (existingTables.length > 0) {

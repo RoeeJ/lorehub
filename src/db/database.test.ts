@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Database } from './database.js';
-import type { CreateFactInput } from '../core/types.js';
+import type { CreateLoreInput } from '../core/types.js';
 
 describe('Database', () => {
   let db: Database;
@@ -17,68 +17,71 @@ describe('Database', () => {
   it('should initialize with drizzle migrations', () => {
     // Check that tables were created
     const tables = db.listTables();
-    expect(tables).toContain('projects');
-    expect(tables).toContain('facts');
-    expect(tables).toContain('relations');
+    console.log('Tables created:', tables);
+    
+    // Check for the new table names
+    expect(tables).toContain('realms');
+    expect(tables).toContain('lores');
+    expect(tables).toContain('lore_relations');
     expect(tables).toContain('__drizzle_migrations');
   });
 
-  it('should create and retrieve a project', () => {
-    const project = db.createProject({
-      name: 'test-project',
+  it('should create and retrieve a realm', () => {
+    const realm = db.createRealm({
+      name: 'test-realm',
       path: '/test/path',
       gitRemote: 'https://github.com/test/repo.git',
     });
 
-    expect(project.name).toBe('test-project');
-    expect(project.gitRemote).toBe('https://github.com/test/repo.git');
+    expect(realm.name).toBe('test-realm');
+    expect(realm.gitRemote).toBe('https://github.com/test/repo.git');
 
-    const found = db.findProjectByPath('/test/path');
+    const found = db.findRealmByPath('/test/path');
     expect(found).toBeDefined();
-    expect(found?.id).toBe(project.id);
+    expect(found?.id).toBe(realm.id);
   });
 
-  it('should create and retrieve facts', async () => {
-    const project = db.createProject({
-      name: 'test-project',
+  it('should create and retrieve lores', async () => {
+    const realm = db.createRealm({
+      name: 'test-realm',
       path: '/test/path',
     });
 
-    const factInput: CreateFactInput = {
-      projectId: project.id,
-      content: 'Test fact content',
-      type: 'decision',
-      source: {
+    const loreInput: CreateLoreInput = {
+      realmId: realm.id,
+      content: 'Test lore content',
+      type: 'decree',
+      origin: {
         type: 'manual',
         reference: 'test',
       },
     };
 
-    const fact = await db.createFact(factInput);
-    expect(fact.content).toBe('Test fact content');
-    expect(fact.status).toBe('active');
+    const lore = await db.createLore(loreInput);
+    expect(lore.content).toBe('Test lore content');
+    expect(lore.status).toBe('living');
 
-    const facts = db.listFactsByProject(project.id);
-    expect(facts).toHaveLength(1);
-    expect(facts[0]?.id).toBe(fact.id);
+    const lores = db.listLoresByRealm(realm.id);
+    expect(lores).toHaveLength(1);
+    expect(lores[0]?.id).toBe(lore.id);
   });
 
-  it('should soft delete facts', async () => {
-    const project = db.createProject({
-      name: 'test-project',
+  it('should soft delete lores', async () => {
+    const realm = db.createRealm({
+      name: 'test-realm',
       path: '/test/path',
     });
 
-    const fact = await db.createFact({
-      projectId: project.id,
+    const lore = await db.createLore({
+      realmId: realm.id,
       content: 'To be deleted',
-      type: 'decision',
-      source: { type: 'manual', reference: 'test' },
+      type: 'decree',
+      origin: { type: 'manual', reference: 'test' },
     });
 
-    db.softDeleteFact(fact.id);
+    db.softDeleteLore(lore.id);
 
-    const updatedFact = db.findFact(fact.id);
-    expect(updatedFact?.status).toBe('archived');
+    const updatedLore = db.findLore(lore.id);
+    expect(updatedLore?.status).toBe('archived');
   });
 });

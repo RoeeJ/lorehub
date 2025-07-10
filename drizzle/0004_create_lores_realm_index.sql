@@ -1,0 +1,1 @@
+CREATE INDEX "idx_lores_realm_id" ON "lores" ("realm_id");

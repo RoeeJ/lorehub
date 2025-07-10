@@ -1,59 +1,101 @@
-import { sqliteTable, text, integer, real, primaryKey, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  primaryKey,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
-// Projects table
-export const projects = sqliteTable('projects', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  path: text('path').notNull().unique(),
-  gitRemote: text('git_remote'),
-  isMonorepo: integer('is_monorepo', { mode: 'boolean' }).notNull().default(false),
-  services: text('services').notNull().default('[]'), // JSON array
-  lastSeen: text('last_seen').notNull().default(sql`CURRENT_TIMESTAMP`),
-  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  pathIdx: uniqueIndex('projects_path_unique').on(table.path),
-}));
+// Realms table (formerly realms)
+export const realms = sqliteTable(
+  'realms',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    path: text('path').notNull().unique(),
+    gitRemote: text('git_remote'),
+    isMonorepo: integer('is_monorepo', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    provinces: text('provinces').notNull().default('[]'), // JSON array
+    lastSeen: text('last_seen')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    pathIdx: uniqueIndex('realms_path_unique').on(table.path),
+  })
+);
 
-// Facts table
-export const facts = sqliteTable('facts', {
-  id: text('id').primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  content: text('content').notNull(),
-  why: text('why'),
-  type: text('type').notNull(),
-  services: text('services').notNull().default('[]'), // JSON array
-  tags: text('tags').notNull().default('[]'), // JSON array
-  confidence: integer('confidence').notNull().default(80),
-  source: text('source').notNull(), // JSON object
-  status: text('status').notNull().default('active'),
-  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  projectIdIdx: index('idx_facts_project_id').on(table.projectId),
-  typeIdx: index('idx_facts_type').on(table.type),
-  statusIdx: index('idx_facts_status').on(table.status),
-  contentIdx: index('idx_facts_content').on(table.content),
-}));
+export const lores = sqliteTable(
+  'lores',
+  {
+    id: text('id').primaryKey(),
+    realmId: text('realm_id')
+      .notNull()
+      .references(() => realms.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    why: text('why'),
+    type: text('type').notNull(),
+    provinces: text('provinces').notNull().default('[]'), // JSON array
+    sigils: text('sigils').notNull().default('[]'), // JSON array
+    confidence: integer('confidence').notNull().default(80),
+    origin: text('origin').notNull(), // JSON object
+    status: text('status').notNull().default('living'),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index('idx_lores_realm_id').on(table.realmId),
+    index('idx_lores_type').on(table.type),
+    index('idx_lores_status').on(table.status),
+    index('idx_lores_content').on(table.content),
+  ]
+);
 
-// Relations table
-export const relations = sqliteTable('relations', {
-  fromFactId: text('from_fact_id').notNull().references(() => facts.id, { onDelete: 'cascade' }),
-  toFactId: text('to_fact_id').notNull().references(() => facts.id, { onDelete: 'cascade' }),
-  type: text('type').notNull(),
-  strength: real('strength').notNull().default(1.0),
-  metadata: text('metadata'), // JSON object
-  createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.fromFactId, table.toFactId, table.type] }),
-  fromIdx: index('idx_relations_from').on(table.fromFactId),
-  toIdx: index('idx_relations_to').on(table.toFactId),
-}));
+// Lore relations table (formerly relations)
+export const loreRelations = sqliteTable(
+  'lore_relations',
+  {
+    fromLoreId: text('from_lore_id')
+      .notNull()
+      .references(() => lores.id, { onDelete: 'cascade' }),
+    toLoreId: text('to_lore_id')
+      .notNull()
+      .references(() => lores.id, { onDelete: 'cascade' }),
+    type: text('type').notNull(),
+    strength: real('strength').notNull().default(1.0),
+    metadata: text('metadata'), // JSON object
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.fromLoreId, table.toLoreId, table.type] }),
+    index('idx_lore_relations_from').on(table.fromLoreId),
+    index('idx_lore_relations_to').on(table.toLoreId),
+  ]
+);
 
 // Type exports for inference
-export type Project = typeof projects.$inferSelect;
-export type NewProject = typeof projects.$inferInsert;
-export type Fact = typeof facts.$inferSelect;
-export type NewFact = typeof facts.$inferInsert;
-export type Relation = typeof relations.$inferSelect;
-export type NewRelation = typeof relations.$inferInsert;
+export type Realm = typeof realms.$inferSelect;
+export type NewRealm = typeof realms.$inferInsert;
+export type Lore = typeof lores.$inferSelect;
+export type NewLore = typeof lores.$inferInsert;
+export type LoreRelation = typeof loreRelations.$inferSelect;
+export type NewLoreRelation = typeof loreRelations.$inferInsert;
+
+// Export schema types for Drizzle
+export type DbRealm = Realm;
+export type DbLore = Lore;
+export type DbLoreRelation = LoreRelation;

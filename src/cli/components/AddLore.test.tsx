@@ -1,61 +1,62 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
-import { AddFact } from './AddFact.js';
+import { AddLore } from './AddLore.js';
 import { Database } from '../../db/database.js';
-import type { Project } from '../../core/types.js';
+import type { Realm } from '../../core/types.js';
 
 // Mock database
 vi.mock('../../db/database.js');
 
-// Mock getProjectInfo to avoid async loading
-import { getProjectInfo } from '../utils/project.js';
-vi.mock('../utils/project.js', () => ({
-  getProjectInfo: vi.fn(),
+// Mock getRealmInfo to avoid async loading
+import { getRealmInfo } from '../utils/realm.js';
+vi.mock('../utils/realm.js', () => ({
+  getRealmInfo: vi.fn(),
 }));
 
 
-describe('AddFact Component', () => {
-  const mockProject: Project = {
+describe('AddLore Component', () => {
+  const mockProject: Realm = {
     id: 'proj-123',
-    name: 'test-project',
+    name: 'test-realm',
     path: '/test/path',
     isMonorepo: false,
-    services: ['api', 'worker'],
+    provinces: ['api', 'worker'],
     lastSeen: new Date(),
     createdAt: new Date(),
   };
 
   const mockDb = {
-    findProjectByPath: vi.fn().mockReturnValue(mockProject),
-    createProject: vi.fn().mockReturnValue(mockProject),
-    createFact: vi.fn().mockImplementation((input) => ({
+    findRealmByPath: vi.fn().mockReturnValue(mockProject),
+    createRealm: vi.fn().mockReturnValue(mockProject),
+    createLore: vi.fn().mockImplementation((input) => ({
       ...input,
-      id: 'fact-123',
+      id: 'lore-123',
       createdAt: new Date(),
       updatedAt: new Date(),
     })),
-    updateProjectLastSeen: vi.fn().mockReturnValue(mockProject),
+    checkForDuplicates: vi.fn().mockResolvedValue([]),
+    updateRealmLastSeen: vi.fn().mockReturnValue(mockProject),
     close: vi.fn(),
   } as unknown as Database;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock for getProjectInfo
-    (getProjectInfo as any).mockResolvedValue({
-      name: 'test-project',
+    // Default mock for getRealmInfo
+    (getRealmInfo as any).mockResolvedValue({
+      name: 'test-realm',
       path: '/test/path',
       gitRemote: null,
       isMonorepo: false,
-      services: [],
+      provinces: [],
     });
   });
 
-  it('should render fact creation form', async () => {
+  it('should render lore creation form', async () => {
     const { lastFrame } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/test/path"
+        realmPath="/test/path"
         initialContent=""
       />
     );
@@ -63,17 +64,17 @@ describe('AddFact Component', () => {
     // Wait for component to load
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(lastFrame()).toContain('Add New Fact');
-    expect(lastFrame()).toContain('test-project - /test/path');
+    expect(lastFrame()).toContain('Add New Lore');
+    expect(lastFrame()).toContain('test-realm - /test/path');
     expect(lastFrame()).toContain('Content');
   });
 
-  it('should show fact type selector', async () => {
+  it('should show lore type selector', async () => {
     const { lastFrame } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/test/path"
-        initialContent="Test fact"
+        realmPath="/test/path"
+        initialContent="Test lore"
       />
     );
 
@@ -81,14 +82,14 @@ describe('AddFact Component', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
 
     expect(lastFrame()).toContain('Type');
-    expect(lastFrame()).toContain('Decision - Architectural or technical choice');
+    expect(lastFrame()).toContain('Decree');
   });
 
   it('should allow navigation between fields', async () => {
     const { lastFrame, stdin } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/test/path"
+        realmPath="/test/path"
         initialContent=""
       />
     );
@@ -108,28 +109,28 @@ describe('AddFact Component', () => {
     expect(lastFrame()).toContain('Why');
   });
 
-  it('should handle monorepo service selection', async () => {
+  it('should handle monorepo province selection', async () => {
     const monorepoProject = {
       ...mockProject,
       isMonorepo: true,
-      services: ['auth', 'api', 'worker', 'web'],
+      provinces: ['auth', 'api', 'worker', 'web'],
     };
 
-    // Mock getProjectInfo for monorepo
-    (getProjectInfo as any).mockResolvedValue({
-      name: 'test-project',
+    // Mock getRealmInfo for monorepo
+    (getRealmInfo as any).mockResolvedValue({
+      name: 'test-realm',
       path: '/test/path',
       gitRemote: null,
       isMonorepo: true,
-      services: ['auth', 'api', 'worker', 'web'],
+      provinces: ['auth', 'api', 'worker', 'web'],
     });
 
-    mockDb.findProjectByPath = vi.fn().mockReturnValue(monorepoProject);
+    mockDb.findRealmByPath = vi.fn().mockReturnValue(monorepoProject);
 
     const { lastFrame } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/test/path"
+        realmPath="/test/path"
         initialContent=""
       />
     );
@@ -138,15 +139,15 @@ describe('AddFact Component', () => {
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const frame = lastFrame();
-    // Check if it's a monorepo form by looking for service-related text
-    expect(frame).toMatch(/Service|All services/);
+    // Check if it's a monorepo form by looking for province-related text
+    expect(frame).toMatch(/Province|All provinces/);
   });
 
   it('should show confidence slider', async () => {
     const { lastFrame } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/test/path"
+        realmPath="/test/path"
         initialContent=""
       />
     );
@@ -158,27 +159,27 @@ describe('AddFact Component', () => {
     expect(lastFrame()).toMatch(/\d+%/); // Should show percentage
   });
 
-  it.skip('should create fact on submit', async () => {
+  it.skip('should create lore on submit', async () => {
     // Skipping this test as it requires complex mocking of Ink's interactive components
     // The functionality is tested through integration tests
   });
 
-  it('should handle project creation for new projects', async () => {
-    // Mock getProjectInfo for new project
-    (getProjectInfo as any).mockResolvedValue({
-      name: 'new-project',
-      path: '/new/project',
+  it('should handle realm creation for new realms', async () => {
+    // Mock getRealmInfo for new realm
+    (getRealmInfo as any).mockResolvedValue({
+      name: 'new-realm',
+      path: '/new/realm',
       gitRemote: null,
       isMonorepo: false,
-      services: [],
+      provinces: [],
     });
 
-    mockDb.findProjectByPath = vi.fn().mockReturnValue(null);
+    mockDb.findRealmByPath = vi.fn().mockReturnValue(null);
 
     const { lastFrame } = render(
-      <AddFact 
+      <AddLore 
         db={mockDb} 
-        projectPath="/new/project"
+        realmPath="/new/realm"
         initialContent=""
       />
     );
@@ -186,13 +187,13 @@ describe('AddFact Component', () => {
     // Wait for component to load
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    expect(mockDb.createProject).toHaveBeenCalledWith(
+    expect(mockDb.createRealm).toHaveBeenCalledWith(
       expect.objectContaining({
-        path: '/new/project',
-        name: 'new-project',
+        path: '/new/realm',
+        name: 'new-realm',
       })
     );
-    expect(lastFrame()).toContain('Add New Fact');
+    expect(lastFrame()).toContain('Add New Lore');
   });
 
   it.skip('should show success message after creation', async () => {

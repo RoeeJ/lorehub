@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LoreHubServer } from './server.js';
 import { Database } from '../db/database.js';
-import type { Fact, Project } from '../core/types.js';
+import type { Lore, Realm } from '../core/types.js';
 
 // We'll create a mock database instance instead of mocking the constructor
 
@@ -9,41 +9,41 @@ describe('LoreHubServer', () => {
   let server: LoreHubServer;
   let mockDb: any;
 
-  const mockProject: Project = {
-    id: 'proj-123',
-    name: 'test-project',
-    path: '/test/project',
+  const mockRealm: Realm = {
+    id: 'realm-123',
+    name: 'test-realm',
+    path: '/test/realm',
     isMonorepo: false,
-    services: [],
+    provinces: [],
     lastSeen: new Date(),
     createdAt: new Date(),
   };
 
-  const mockFacts: Fact[] = [
+  const mockLores: Lore[] = [
     {
-      id: 'fact-1',
-      projectId: 'proj-123',
+      id: 'lore-1',
+      realmId: 'realm-123',
       content: 'Use PostgreSQL for data storage',
       why: 'Need ACID compliance',
-      type: 'decision',
-      services: [],
-      tags: ['database', 'postgresql'],
+      type: 'decree',
+      provinces: [],
+      sigils: ['database', 'postgresql'],
       confidence: 90,
-      source: { type: 'manual', reference: 'cli' },
-      status: 'active',
+      origin: { type: 'manual', reference: 'cli' },
+      status: 'living',
       createdAt: new Date('2024-01-01'),
       updatedAt: new Date('2024-01-01'),
     },
     {
-      id: 'fact-2',
-      projectId: 'proj-123',
+      id: 'lore-2',
+      realmId: 'realm-123',
       content: 'Redis for caching',
-      type: 'decision',
-      services: [],
-      tags: ['cache', 'redis'],
+      type: 'decree',
+      provinces: [],
+      sigils: ['cache', 'redis'],
       confidence: 85,
-      source: { type: 'manual', reference: 'cli' },
-      status: 'active',
+      origin: { type: 'manual', reference: 'cli' },
+      status: 'living',
       createdAt: new Date('2024-01-02'),
       updatedAt: new Date('2024-01-02'),
     },
@@ -55,22 +55,23 @@ describe('LoreHubServer', () => {
     
     // Create a mock database object
     mockDb = {
-      findProjectByPath: vi.fn(),
-      searchFacts: vi.fn(),
-      listFactsByProject: vi.fn(),
-      listFactsByType: vi.fn(),
-      listFactsByService: vi.fn(),
-      getFactById: vi.fn(),
-      listProjects: vi.fn(),
-      createFact: vi.fn(),
-      updateFact: vi.fn(),
-      deleteFact: vi.fn(),
-      softDeleteFact: vi.fn(),
-      restoreFact: vi.fn(),
-      createProject: vi.fn(),
+      findRealmByPath: vi.fn(),
+      searchLores: vi.fn(),
+      listLoresByRealm: vi.fn(),
+      listLoresByType: vi.fn(),
+      listLoresByService: vi.fn(),
+      findLore: vi.fn(),
+      listRealms: vi.fn(),
+      createLore: vi.fn(),
+      updateLore: vi.fn(),
+      deleteLore: vi.fn(),
+      softDeleteLore: vi.fn(),
+      restoreLore: vi.fn(),
+      createRealm: vi.fn(),
       createRelation: vi.fn(),
       deleteRelation: vi.fn(),
-      listRelationsByFact: vi.fn(),
+      listRelationsByLore: vi.fn(),
+      getRealmLoreCount: vi.fn(),
       close: vi.fn(),
     } as any;
     
@@ -96,575 +97,576 @@ describe('LoreHubServer', () => {
       
       expect(tools).toContainEqual(
         expect.objectContaining({
-          name: 'search_facts',
-          description: expect.stringContaining('Search facts'),
+          name: 'search_lores',
+          description: expect.stringContaining('Search lores'),
         })
       );
       
       expect(tools).toContainEqual(
         expect.objectContaining({
-          name: 'list_facts',
-          description: expect.stringContaining('List facts'),
+          name: 'list_lores',
+          description: expect.stringContaining('List lores'),
         })
       );
 
       expect(tools).toContainEqual(
         expect.objectContaining({
-          name: 'get_fact',
-          description: expect.stringContaining('Get a specific fact'),
+          name: 'get_lore',
+          description: expect.stringContaining('Get a specific lore'),
         })
       );
 
       expect(tools).toContainEqual(
         expect.objectContaining({
-          name: 'list_projects',
-          description: expect.stringContaining('List all projects'),
+          name: 'list_realms',
+          description: expect.stringContaining('List all realms'),
         })
       );
     });
 
-    describe('search_facts', () => {
+    describe('search_lores', () => {
       beforeEach(() => {
         vi.clearAllMocks();
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(mockProject);
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
-        mockDb.searchFacts = vi.fn().mockReturnValue(mockFacts);
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(mockRealm);
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
+        mockDb.searchLores = vi.fn().mockReturnValue(mockLores);
       });
 
-      it('should search facts with query', async () => {
-        const result = await server.callTool('search_facts', {
+      it('should search lores with query', async () => {
+        const result = await server.callTool('search_lores', {
           query: 'database',
-          project_path: '/test/project',
+          realm_path: '/test/realm',
         });
 
-        expect(mockDb.searchFacts).toHaveBeenCalledWith('proj-123', 'database');
-        expect(result).toHaveProperty('facts');
-        expect(result.facts).toHaveLength(2);
-        // Facts are sorted by date, fact-2 has a later date
-        expect(result.facts[0]).toMatchObject({
-          id: 'fact-2',
+        expect(mockDb.searchLores).toHaveBeenCalledWith('realm-123', 'database');
+        expect(result).toHaveProperty('lores');
+        expect(result.lores).toHaveLength(2);
+        // Lores are sorted by date, lore-2 has a later date
+        expect(result.lores[0]).toMatchObject({
+          id: 'lore-2',
           content: 'Redis for caching',
-          type: 'decision',
-          project: {
-            name: 'test-project',
-            path: '/test/project',
+          type: 'decree',
+          realm: {
+            name: 'test-realm',
+            path: '/test/realm',
           },
         });
-        expect(result.facts[1]).toMatchObject({
-          id: 'fact-1',
+        expect(result.lores[1]).toMatchObject({
+          id: 'lore-1',
           content: 'Use PostgreSQL for data storage',
-          type: 'decision',
-          project: {
-            name: 'test-project',
-            path: '/test/project',
+          type: 'decree',
+          realm: {
+            name: 'test-realm',
+            path: '/test/realm',
           },
         });
       });
 
       it('should filter by type', async () => {
-        // searchFacts applies the filter after searching, not using listFactsByType
-        const result = await server.callTool('search_facts', {
+        // searchLores applies the filter after searching, not using listLoresByType
+        const result = await server.callTool('search_lores', {
           query: 'database',
-          project_path: '/test/project',
-          type: 'decision',
+          realm_path: '/test/realm',
+          type: 'decree',
         });
 
-        // Both facts match "database" but we're filtering by type
-        expect(result.facts).toHaveLength(2);
-        expect(result.facts.every((f: any) => f.type === 'decision')).toBe(true);
+        // Both lores match "database" but we're filtering by type
+        expect(result.lores).toHaveLength(2);
+        expect(result.lores.every((l: any) => l.type === 'decree')).toBe(true);
       });
 
-      it('should handle project not found', async () => {
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(null);
+      it('should handle realm not found', async () => {
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('search_facts', {
+          server.callTool('search_lores', {
             query: 'test',
-            project_path: '/nonexistent',
+            realm_path: '/nonexistent',
           })
-        ).rejects.toThrow('Project not found');
+        ).rejects.toThrow('Realm not found');
       });
 
-      it('should search across all projects when no project_path specified', async () => {
-        const project2 = { ...mockProject, id: 'proj-456', name: 'another-project' };
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject, project2]);
-        mockDb.searchFacts = vi.fn()
-          .mockReturnValueOnce([mockFacts[0]])  // First project
-          .mockReturnValueOnce([mockFacts[1]]); // Second project
+      it('should search across all realms when no realm_path specified', async () => {
+        const realm2 = { ...mockRealm, id: 'realm-456', name: 'another-realm' };
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm, realm2]);
+        mockDb.searchLores = vi.fn()
+          .mockReturnValueOnce([mockLores[0]])  // First realm
+          .mockReturnValueOnce([mockLores[1]]); // Second realm
 
-        const result = await server.callTool('search_facts', {
+        const result = await server.callTool('search_lores', {
           query: 'test',
         });
 
-        expect(mockDb.listProjects).toHaveBeenCalled();
-        expect(mockDb.searchFacts).toHaveBeenCalledTimes(2);
-        expect(result.searchedProjects).toBe(2);
-        expect(result.facts).toHaveLength(2);
+        expect(mockDb.listRealms).toHaveBeenCalled();
+        expect(mockDb.searchLores).toHaveBeenCalledTimes(2);
+        expect(result.searchedRealms).toBe(2);
+        expect(result.lores).toHaveLength(2);
       });
     });
 
-    describe('list_facts', () => {
+    describe('list_lores', () => {
       beforeEach(() => {
         vi.clearAllMocks();
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(mockProject);
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
-        mockDb.listFactsByProject = vi.fn().mockReturnValue(mockFacts);
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(mockRealm);
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
+        mockDb.listLoresByRealm = vi.fn().mockReturnValue(mockLores);
       });
 
-      it('should list all facts for a project', async () => {
-        const result = await server.callTool('list_facts', {
-          project_path: '/test/project',
+      it('should list all lores for a realm', async () => {
+        const result = await server.callTool('list_lores', {
+          realm_path: '/test/realm',
         });
 
-        expect(mockDb.listFactsByProject).toHaveBeenCalledWith('proj-123');
-        expect(result.facts).toHaveLength(2);
+        expect(mockDb.listLoresByRealm).toHaveBeenCalledWith('realm-123');
+        expect(result.lores).toHaveLength(2);
         expect(result.total).toBe(2);
       });
 
       it('should respect limit parameter', async () => {
-        const result = await server.callTool('list_facts', {
-          project_path: '/test/project',
+        const result = await server.callTool('list_lores', {
+          realm_path: '/test/realm',
           limit: 1,
         });
 
-        expect(result.facts).toHaveLength(1);
+        expect(result.lores).toHaveLength(1);
       });
 
       it('should filter by type', async () => {
-        mockDb.listFactsByType = vi.fn().mockReturnValue([mockFacts[0]]);
+        mockDb.listLoresByType = vi.fn().mockReturnValue([mockLores[0]]);
 
-        const result = await server.callTool('list_facts', {
-          project_path: '/test/project',
-          type: 'decision',
+        const result = await server.callTool('list_lores', {
+          realm_path: '/test/realm',
+          type: 'decree',
         });
 
-        expect(mockDb.listFactsByType).toHaveBeenCalledWith('proj-123', 'decision');
-        expect(result.facts).toHaveLength(1);
+        expect(mockDb.listLoresByType).toHaveBeenCalledWith('realm-123', 'decree');
+        expect(result.lores).toHaveLength(1);
       });
 
-      it('should filter by service', async () => {
-        mockDb.listFactsByService = vi.fn().mockReturnValue([]);
+      it('should filter by province', async () => {
+        mockDb.listLoresByProvince = vi.fn().mockReturnValue([]);
 
-        const result = await server.callTool('list_facts', {
-          project_path: '/test/project',
-          service: 'api',
+        const result = await server.callTool('list_lores', {
+          realm_path: '/test/realm',
+          province: 'api',
         });
 
-        expect(mockDb.listFactsByService).toHaveBeenCalledWith('proj-123', 'api');
-        expect(result.facts).toHaveLength(0);
+        expect(mockDb.listLoresByProvince).toHaveBeenCalledWith('realm-123', 'api');
+        expect(result.lores).toHaveLength(0);
       });
     });
 
-    describe('get_fact', () => {
+    describe('get_lore', () => {
       beforeEach(() => {
         // Reset mocks before each test in this describe block
         vi.clearAllMocks();
       });
 
-      it('should return a specific fact by ID', async () => {
-        // Create a fresh fact object to avoid any pollution
-        const factToReturn = {
-          id: 'fact-1',
-          projectId: 'proj-123',
+      it('should return a specific lore by ID', async () => {
+        // Create a fresh lore object to avoid any pollution
+        const loreToReturn = {
+          id: 'lore-1',
+          realmId: 'realm-123',
           content: 'Use PostgreSQL for data storage',
           why: 'Need ACID compliance',
-          type: 'decision',
-          services: [],
-          tags: ['database', 'postgresql'],
+          type: 'decree',
+          provinces: [],
+          sigils: ['database', 'postgresql'],
           confidence: 90,
-          source: { type: 'manual', reference: 'cli' },
-          status: 'active',
+          origin: { type: 'manual', reference: 'cli' },
+          status: 'living',
           createdAt: new Date('2024-01-01'),
           updatedAt: new Date('2024-01-01'),
         };
         
-        mockDb.getFactById.mockReturnValue(factToReturn);
-        mockDb.listProjects.mockReturnValue([mockProject]);
+        mockDb.findLore.mockReturnValue(loreToReturn);
+        mockDb.listRealms.mockReturnValue([mockRealm]);
 
-        const result = await server.callTool('get_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('get_lore', {
+          lore_id: 'lore-1',
         });
 
-        expect(mockDb.getFactById).toHaveBeenCalledWith('fact-1');
-        expect(result.fact.id).toBe('fact-1');
-        expect(result.fact.content).toBe('Use PostgreSQL for data storage');
+        expect(mockDb.findLore).toHaveBeenCalledWith('lore-1');
+        expect(result.lore.id).toBe('lore-1');
+        expect(result.lore.content).toBe('Use PostgreSQL for data storage');
       });
 
-      it('should handle fact not found', async () => {
-        mockDb.getFactById.mockReturnValue(null);
+      it('should handle lore not found', async () => {
+        mockDb.findLore.mockReturnValue(null);
 
         await expect(
-          server.callTool('get_fact', {
-            fact_id: 'nonexistent',
+          server.callTool('get_lore', {
+            lore_id: 'nonexistent',
           })
-        ).rejects.toThrow('Fact not found');
+        ).rejects.toThrow('Lore not found');
       });
     });
 
-    describe('list_projects', () => {
+    describe('list_realms', () => {
       beforeEach(() => {
         vi.clearAllMocks();
       });
 
-      it('should list all projects', async () => {
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
-        mockDb.listFactsByProject = vi.fn().mockReturnValue(mockFacts);
+      it('should list all realms', async () => {
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
+        mockDb.listLoresByRealm = vi.fn().mockReturnValue(mockLores);
+        mockDb.getRealmLoreCount = vi.fn().mockReturnValue(2);
 
-        const result = await server.callTool('list_projects', {});
+        const result = await server.callTool('list_realms', {});
 
-        expect(mockDb.listProjects).toHaveBeenCalled();
-        expect(result.projects).toHaveLength(1);
-        expect(result.projects[0]).toMatchObject({
-          id: 'proj-123',
-          name: 'test-project',
-          path: '/test/project',
+        expect(mockDb.listRealms).toHaveBeenCalled();
+        expect(result.realms).toHaveLength(1);
+        expect(result.realms[0]).toMatchObject({
+          id: 'realm-123',
+          name: 'test-realm',
+          path: '/test/realm',
         });
       });
     });
 
-    describe('create_fact', () => {
-      it('should create a new fact', async () => {
-        const newFact: Fact = {
-          id: 'fact-new',
-          projectId: 'proj-123',
+    describe('create_lore', () => {
+      it('should create a new lore', async () => {
+        const newLore: Lore = {
+          id: 'lore-new',
+          realmId: 'realm-123',
           content: 'New architectural decision',
           why: 'To improve performance',
-          type: 'decision',
-          services: ['api', 'frontend'],
-          tags: ['architecture', 'performance'],
+          type: 'decree',
+          provinces: ['api', 'frontend'],
+          sigils: ['architecture', 'performance'],
           confidence: 95,
-          source: { type: 'manual', reference: 'mcp' },
-          status: 'active',
+          origin: { type: 'manual', reference: 'mcp' },
+          status: 'living',
           createdAt: new Date(),
           updatedAt: new Date(),
         };
 
-        // Make project's lastSeen different from createdAt to indicate it's not newly created
-        const existingProject = {
-          ...mockProject,
+        // Make realm's lastSeen different from createdAt to indicate it's not newly created
+        const existingRealm = {
+          ...mockRealm,
           lastSeen: new Date(Date.now() + 1000), // 1 second later
         };
 
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(existingProject);
-        mockDb.createFact = vi.fn().mockReturnValue(newFact);
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(existingRealm);
+        mockDb.createLore = vi.fn().mockReturnValue(newLore);
 
-        const result = await server.callTool('create_fact', {
-          project_path: '/test/project',
+        const result = await server.callTool('create_lore', {
+          realm_path: '/test/realm',
           content: 'New architectural decision',
           why: 'To improve performance',
-          type: 'decision',
-          services: ['api', 'frontend'],
-          tags: ['architecture', 'performance'],
+          type: 'decree',
+          provinces: ['api', 'frontend'],
+          sigils: ['architecture', 'performance'],
           confidence: 95,
         });
 
-        expect(mockDb.findProjectByPath).toHaveBeenCalledWith('/test/project');
-        expect(mockDb.createFact).toHaveBeenCalledWith({
-          projectId: 'proj-123',
+        expect(mockDb.findRealmByPath).toHaveBeenCalledWith('/test/realm');
+        expect(mockDb.createLore).toHaveBeenCalledWith({
+          realmId: 'realm-123',
           content: 'New architectural decision',
           why: 'To improve performance',
-          type: 'decision',
-          services: ['api', 'frontend'],
-          tags: ['architecture', 'performance'],
+          type: 'decree',
+          provinces: ['api', 'frontend'],
+          sigils: ['architecture', 'performance'],
           confidence: 95,
-          source: { type: 'manual', reference: 'mcp' },
+          origin: { type: 'manual', reference: 'mcp' },
         });
-        expect(result.fact).toMatchObject({
-          id: 'fact-new',
+        expect(result.lore).toMatchObject({
+          id: 'lore-new',
           content: 'New architectural decision',
-          type: 'decision',
+          type: 'decree',
         });
-        expect(result.message).toBe('Fact created successfully');
+        expect(result.message).toBe('Lore created successfully');
       });
 
-      it('should auto-create project if not found', async () => {
-        const newProject: Project = {
-          id: 'proj-new',
-          name: 'newproject',
-          path: '/nonexistent/newproject',
+      it('should auto-create realm if not found', async () => {
+        const newRealm: Realm = {
+          id: 'realm-new',
+          name: 'newrealm',
+          path: '/nonexistent/newrealm',
           isMonorepo: false,
-          services: [],
+          provinces: [],
           lastSeen: new Date(),
           createdAt: new Date(),
         };
 
-        const newFact: Fact = {
-          id: 'fact-new',
-          projectId: 'proj-new',
-          content: 'Test fact',
-          type: 'decision',
-          services: [],
-          tags: [],
+        const newLore: Lore = {
+          id: 'lore-new',
+          realmId: 'realm-new',
+          content: 'Test lore',
+          type: 'decree',
+          provinces: [],
+          sigils: [],
           confidence: 80,
-          source: { type: 'manual', reference: 'mcp' },
-          status: 'active',
+          origin: { type: 'manual', reference: 'mcp' },
+          status: 'living',
           createdAt: new Date(),
           updatedAt: new Date(),
         };
 
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(null);
-        mockDb.createProject = vi.fn().mockReturnValue(newProject);
-        mockDb.createFact = vi.fn().mockReturnValue(newFact);
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(null);
+        mockDb.createRealm = vi.fn().mockReturnValue(newRealm);
+        mockDb.createLore = vi.fn().mockReturnValue(newLore);
 
-        const result = await server.callTool('create_fact', {
-          project_path: '/nonexistent/newproject',
-          content: 'Test fact',
-          type: 'decision',
+        const result = await server.callTool('create_lore', {
+          realm_path: '/nonexistent/newrealm',
+          content: 'Test lore',
+          type: 'decree',
         });
 
-        expect(mockDb.createProject).toHaveBeenCalledWith({
-          name: 'newproject',
-          path: '/nonexistent/newproject',
+        expect(mockDb.createRealm).toHaveBeenCalledWith({
+          name: 'newrealm',
+          path: '/nonexistent/newrealm',
           isMonorepo: false,
-          services: [],
+          provinces: [],
         });
-        expect(mockDb.createFact).toHaveBeenCalled();
-        expect(result.message).toBe('Project initialized and fact created successfully');
-        expect(result.project.created).toBe(true);
+        expect(mockDb.createLore).toHaveBeenCalled();
+        expect(result.message).toBe('Realm initialized and lore created successfully');
+        expect(result.realm.created).toBe(true);
       });
     });
 
-    describe('update_fact', () => {
-      it('should update an existing fact', async () => {
-        const existingFact = mockFacts[0]!;
-        const updatedFact: Fact = {
-          id: existingFact.id,
-          projectId: existingFact.projectId,
+    describe('update_lore', () => {
+      it('should update an existing lore', async () => {
+        const existingLore = mockLores[0]!;
+        const updatedLore: Lore = {
+          id: existingLore.id,
+          realmId: existingLore.realmId,
           content: 'Use PostgreSQL 15 for data storage',
-          why: existingFact.why,
-          type: existingFact.type,
-          services: existingFact.services,
-          tags: ['database', 'postgresql', 'upgrade'],
+          why: existingLore.why,
+          type: existingLore.type,
+          provinces: existingLore.provinces,
+          sigils: ['database', 'postgresql', 'upgrade'],
           confidence: 95,
-          source: existingFact.source,
-          status: existingFact.status,
-          createdAt: existingFact.createdAt,
+          origin: existingLore.origin,
+          status: existingLore.status,
+          createdAt: existingLore.createdAt,
           updatedAt: new Date(),
         };
 
-        mockDb.getFactById = vi.fn().mockReturnValue(existingFact);
-        mockDb.updateFact = vi.fn().mockReturnValue(updatedFact);
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
+        mockDb.findLore = vi.fn().mockReturnValue(existingLore);
+        mockDb.updateLore = vi.fn().mockReturnValue(updatedLore);
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
 
-        const result = await server.callTool('update_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('update_lore', {
+          lore_id: 'lore-1',
           content: 'Use PostgreSQL 15 for data storage',
           confidence: 95,
-          tags: ['database', 'postgresql', 'upgrade'],
+          sigils: ['database', 'postgresql', 'upgrade'],
         });
 
-        expect(mockDb.getFactById).toHaveBeenCalledWith('fact-1');
-        expect(mockDb.updateFact).toHaveBeenCalledWith('fact-1', {
+        expect(mockDb.findLore).toHaveBeenCalledWith('lore-1');
+        expect(mockDb.updateLore).toHaveBeenCalledWith('lore-1', {
           content: 'Use PostgreSQL 15 for data storage',
           confidence: 95,
-          tags: ['database', 'postgresql', 'upgrade'],
+          sigils: ['database', 'postgresql', 'upgrade'],
           why: undefined,
           type: undefined,
-          services: undefined,
+          provinces: undefined,
           status: undefined,
-          source: undefined,
+          origin: undefined,
         });
-        expect(result.fact.content).toBe('Use PostgreSQL 15 for data storage');
-        expect(result.fact.confidence).toBe(95);
-        expect(result.message).toBe('Fact updated successfully');
+        expect(result.lore.content).toBe('Use PostgreSQL 15 for data storage');
+        expect(result.lore.confidence).toBe(95);
+        expect(result.message).toBe('Lore updated successfully');
       });
 
-      it('should throw error if fact not found', async () => {
-        mockDb.getFactById = vi.fn().mockReturnValue(null);
+      it('should throw error if lore not found', async () => {
+        mockDb.findLore = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('update_fact', {
-            fact_id: 'nonexistent-fact',
+          server.callTool('update_lore', {
+            lore_id: 'nonexistent-lore',
             content: 'Updated content',
           })
-        ).rejects.toThrow('Fact not found with ID: nonexistent-fact');
+        ).rejects.toThrow('Lore not found with ID: nonexistent-lore');
       });
 
-      it('should update fact status', async () => {
-        const existingFact = mockFacts[0]!;
-        const archivedFact: Fact = {
-          id: existingFact.id,
-          projectId: existingFact.projectId,
-          content: existingFact.content,
-          why: existingFact.why,
-          type: existingFact.type,
-          services: existingFact.services,
-          tags: existingFact.tags,
-          confidence: existingFact.confidence,
-          source: existingFact.source,
+      it('should update lore status', async () => {
+        const existingLore = mockLores[0]!;
+        const archivedLore: Lore = {
+          id: existingLore.id,
+          realmId: existingLore.realmId,
+          content: existingLore.content,
+          why: existingLore.why,
+          type: existingLore.type,
+          provinces: existingLore.provinces,
+          sigils: existingLore.sigils,
+          confidence: existingLore.confidence,
+          origin: existingLore.origin,
           status: 'archived',
-          createdAt: existingFact.createdAt,
+          createdAt: existingLore.createdAt,
           updatedAt: new Date(),
         };
 
-        mockDb.getFactById = vi.fn().mockReturnValue(existingFact);
-        mockDb.updateFact = vi.fn().mockReturnValue(archivedFact);
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
+        mockDb.findLore = vi.fn().mockReturnValue(existingLore);
+        mockDb.updateLore = vi.fn().mockReturnValue(archivedLore);
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
 
-        const result = await server.callTool('update_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('update_lore', {
+          lore_id: 'lore-1',
           status: 'archived',
         });
 
-        expect(result.fact.status).toBe('archived');
+        expect(result.lore.status).toBe('archived');
       });
     });
 
-    describe('delete_fact', () => {
-      it('should delete a fact with confirmation', async () => {
-        const factToDelete = mockFacts[0]!;
+    describe('delete_lore', () => {
+      it('should delete a lore with confirmation', async () => {
+        const loreToDelete = mockLores[0]!;
         
-        mockDb.getFactById = vi.fn().mockReturnValue(factToDelete);
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
-        mockDb.deleteFact = vi.fn();
+        mockDb.findLore = vi.fn().mockReturnValue(loreToDelete);
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
+        mockDb.deleteLore = vi.fn();
 
-        const result = await server.callTool('delete_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('delete_lore', {
+          lore_id: 'lore-1',
           confirm: true,
         });
 
-        expect(mockDb.getFactById).toHaveBeenCalledWith('fact-1');
-        expect(mockDb.deleteFact).toHaveBeenCalledWith('fact-1');
+        expect(mockDb.findLore).toHaveBeenCalledWith('lore-1');
+        expect(mockDb.deleteLore).toHaveBeenCalledWith('lore-1');
         expect(result.deleted).toBe(true);
-        expect(result.fact_id).toBe('fact-1');
-        expect(result.message).toBe('Fact permanently deleted');
+        expect(result.lore_id).toBe('lore-1');
+        expect(result.message).toBe('Lore permanently deleted');
       });
 
       it('should throw error without confirmation', async () => {
         await expect(
-          server.callTool('delete_fact', {
-            fact_id: 'fact-1',
+          server.callTool('delete_lore', {
+            lore_id: 'lore-1',
             confirm: false,
           })
         ).rejects.toThrow('Deletion must be confirmed by setting confirm: true');
       });
 
-      it('should throw error if fact not found', async () => {
-        mockDb.getFactById = vi.fn().mockReturnValue(null);
+      it('should throw error if lore not found', async () => {
+        mockDb.findLore = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('delete_fact', {
-            fact_id: 'nonexistent-fact',
+          server.callTool('delete_lore', {
+            lore_id: 'nonexistent-lore',
             confirm: true,
           })
-        ).rejects.toThrow('Fact not found with ID: nonexistent-fact');
+        ).rejects.toThrow('Lore not found with ID: nonexistent-lore');
       });
     });
 
-    describe('archive_fact', () => {
-      it('should archive an active fact', async () => {
-        const activeFact = mockFacts[0]!;
-        const archivedFact: Fact = {
-          id: activeFact.id,
-          projectId: activeFact.projectId,
-          content: activeFact.content,
-          why: activeFact.why,
-          type: activeFact.type,
-          services: activeFact.services,
-          tags: activeFact.tags,
-          confidence: activeFact.confidence,
-          source: activeFact.source,
+    describe('archive_lore', () => {
+      it('should archive an active lore', async () => {
+        const activeLore = mockLores[0]!;
+        const archivedLore: Lore = {
+          id: activeLore.id,
+          realmId: activeLore.realmId,
+          content: activeLore.content,
+          why: activeLore.why,
+          type: activeLore.type,
+          provinces: activeLore.provinces,
+          sigils: activeLore.sigils,
+          confidence: activeLore.confidence,
+          origin: activeLore.origin,
           status: 'archived',
-          createdAt: activeFact.createdAt,
+          createdAt: activeLore.createdAt,
           updatedAt: new Date(),
         };
 
-        mockDb.getFactById = vi.fn()
-          .mockReturnValueOnce(activeFact) // First call: verify exists
-          .mockReturnValueOnce(archivedFact); // Second call: after archiving
-        mockDb.softDeleteFact = vi.fn();
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
+        mockDb.findLore = vi.fn()
+          .mockReturnValueOnce(activeLore) // First call: verify exists
+          .mockReturnValueOnce(archivedLore); // Second call: after archiving
+        mockDb.softDeleteLore = vi.fn();
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
 
-        const result = await server.callTool('archive_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('archive_lore', {
+          lore_id: 'lore-1',
         });
 
-        expect(mockDb.softDeleteFact).toHaveBeenCalledWith('fact-1');
-        expect(result.fact.status).toBe('archived');
-        expect(result.message).toBe('Fact archived successfully');
+        expect(mockDb.softDeleteLore).toHaveBeenCalledWith('lore-1');
+        expect(result.lore.status).toBe('archived');
+        expect(result.message).toBe('Lore archived successfully');
       });
 
-      it('should throw error if fact already archived', async () => {
-        const archivedFact = { ...mockFacts[0]!, status: 'archived' };
-        mockDb.getFactById = vi.fn().mockReturnValue(archivedFact);
+      it('should throw error if lore already archived', async () => {
+        const archivedLore = { ...mockLores[0]!, status: 'archived' };
+        mockDb.findLore = vi.fn().mockReturnValue(archivedLore);
 
         await expect(
-          server.callTool('archive_fact', {
-            fact_id: 'fact-1',
+          server.callTool('archive_lore', {
+            lore_id: 'lore-1',
           })
-        ).rejects.toThrow('Fact is already archived');
+        ).rejects.toThrow('Lore is already archived');
       });
 
-      it('should throw error if fact not found', async () => {
-        mockDb.getFactById = vi.fn().mockReturnValue(null);
+      it('should throw error if lore not found', async () => {
+        mockDb.findLore = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('archive_fact', {
-            fact_id: 'nonexistent-fact',
+          server.callTool('archive_lore', {
+            lore_id: 'nonexistent-lore',
           })
-        ).rejects.toThrow('Fact not found with ID: nonexistent-fact');
+        ).rejects.toThrow('Lore not found with ID: nonexistent-lore');
       });
     });
 
-    describe('restore_fact', () => {
-      it('should restore an archived fact', async () => {
-        const archivedFact = { ...mockFacts[0]!, status: 'archived' as const };
-        const restoredFact: Fact = {
-          id: archivedFact.id,
-          projectId: archivedFact.projectId,
-          content: archivedFact.content,
-          why: archivedFact.why,
-          type: archivedFact.type,
-          services: archivedFact.services,
-          tags: archivedFact.tags,
-          confidence: archivedFact.confidence,
-          source: archivedFact.source,
-          status: 'active',
-          createdAt: archivedFact.createdAt,
+    describe('restore_lore', () => {
+      it('should restore an archived lore', async () => {
+        const archivedLore = { ...mockLores[0]!, status: 'archived' as const };
+        const restoredLore: Lore = {
+          id: archivedLore.id,
+          realmId: archivedLore.realmId,
+          content: archivedLore.content,
+          why: archivedLore.why,
+          type: archivedLore.type,
+          provinces: archivedLore.provinces,
+          sigils: archivedLore.sigils,
+          confidence: archivedLore.confidence,
+          origin: archivedLore.origin,
+          status: 'living',
+          createdAt: archivedLore.createdAt,
           updatedAt: new Date(),
         };
 
-        mockDb.getFactById = vi.fn()
-          .mockReturnValueOnce(archivedFact) // First call: verify exists and archived
-          .mockReturnValueOnce(restoredFact); // Second call: after restoring
-        mockDb.restoreFact = vi.fn();
-        mockDb.listProjects = vi.fn().mockReturnValue([mockProject]);
+        mockDb.findLore = vi.fn()
+          .mockReturnValueOnce(archivedLore) // First call: verify exists and archived
+          .mockReturnValueOnce(restoredLore); // Second call: after restoring
+        mockDb.restoreLore = vi.fn();
+        mockDb.listRealms = vi.fn().mockReturnValue([mockRealm]);
 
-        const result = await server.callTool('restore_fact', {
-          fact_id: 'fact-1',
+        const result = await server.callTool('restore_lore', {
+          lore_id: 'lore-1',
         });
 
-        expect(mockDb.restoreFact).toHaveBeenCalledWith('fact-1');
-        expect(result.fact.status).toBe('active');
-        expect(result.message).toBe('Fact restored successfully');
+        expect(mockDb.restoreLore).toHaveBeenCalledWith('lore-1');
+        expect(result.lore.status).toBe('living');
+        expect(result.message).toBe('Lore restored successfully');
       });
 
-      it('should throw error if fact not archived', async () => {
-        const activeFact = mockFacts[0]!;
-        mockDb.getFactById = vi.fn().mockReturnValue(activeFact);
+      it('should throw error if lore not archived', async () => {
+        const activeLore = mockLores[0]!;
+        mockDb.findLore = vi.fn().mockReturnValue(activeLore);
 
         await expect(
-          server.callTool('restore_fact', {
-            fact_id: 'fact-1',
+          server.callTool('restore_lore', {
+            lore_id: 'lore-1',
           })
-        ).rejects.toThrow('Fact is not archived');
+        ).rejects.toThrow('Lore is not archived');
       });
 
-      it('should throw error if fact not found', async () => {
-        mockDb.getFactById = vi.fn().mockReturnValue(null);
+      it('should throw error if lore not found', async () => {
+        mockDb.findLore = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('restore_fact', {
-            fact_id: 'nonexistent-fact',
+          server.callTool('restore_lore', {
+            lore_id: 'nonexistent-lore',
           })
-        ).rejects.toThrow('Fact not found with ID: nonexistent-fact');
+        ).rejects.toThrow('Lore not found with ID: nonexistent-lore');
       });
     });
 
     describe('relation tools', () => {
       const mockRelation = {
-        fromFactId: 'fact-1',
-        toFactId: 'fact-2',
+        fromLoreId: 'lore-1',
+        toLoreId: 'lore-2',
         type: 'depends_on',
         strength: 1.0,
         metadata: null,
@@ -672,22 +674,22 @@ describe('LoreHubServer', () => {
       };
 
       describe('create_relation', () => {
-        it('should create a relation between two facts', async () => {
-          mockDb.getFactById = vi.fn()
-            .mockReturnValueOnce(mockFacts[0]) // fromFact
-            .mockReturnValueOnce(mockFacts[1]); // toFact
+        it('should create a relation between two lores', async () => {
+          mockDb.findLore = vi.fn()
+            .mockReturnValueOnce(mockLores[0]) // fromLore
+            .mockReturnValueOnce(mockLores[1]); // toLore
           mockDb.createRelation = vi.fn().mockReturnValue(mockRelation);
 
           const result = await server.callTool('create_relation', {
-            from_fact_id: 'fact-1',
-            to_fact_id: 'fact-2',
+            from_lore_id: 'lore-1',
+            to_lore_id: 'lore-2',
             type: 'depends_on',
             strength: 1.0,
           });
 
           expect(mockDb.createRelation).toHaveBeenCalledWith({
-            fromFactId: 'fact-1',
-            toFactId: 'fact-2',
+            fromLoreId: 'lore-1',
+            toLoreId: 'lore-2',
             type: 'depends_on',
             strength: 1.0,
             metadata: undefined,
@@ -696,62 +698,62 @@ describe('LoreHubServer', () => {
           expect(result.message).toBe('Relation created successfully');
         });
 
-        it('should throw error if source fact not found', async () => {
-          mockDb.getFactById = vi.fn().mockReturnValue(null);
+        it('should throw error if source lore not found', async () => {
+          mockDb.findLore = vi.fn().mockReturnValue(null);
 
           await expect(
             server.callTool('create_relation', {
-              from_fact_id: 'nonexistent',
-              to_fact_id: 'fact-2',
+              from_lore_id: 'nonexistent',
+              to_lore_id: 'lore-2',
               type: 'depends_on',
             })
-          ).rejects.toThrow('Source fact not found with ID: nonexistent');
+          ).rejects.toThrow('Source lore not found with ID: nonexistent');
         });
 
-        it('should throw error if facts are in different projects', async () => {
-          const fact1 = { ...mockFacts[0], projectId: 'proj-1' };
-          const fact2 = { ...mockFacts[1], projectId: 'proj-2' };
+        it('should throw error if lores are in different realms', async () => {
+          const lore1 = { ...mockLores[0], realmId: 'realm-1' };
+          const lore2 = { ...mockLores[1], realmId: 'realm-2' };
           
-          mockDb.getFactById = vi.fn()
-            .mockReturnValueOnce(fact1)
-            .mockReturnValueOnce(fact2);
+          mockDb.findLore = vi.fn()
+            .mockReturnValueOnce(lore1)
+            .mockReturnValueOnce(lore2);
 
           await expect(
             server.callTool('create_relation', {
-              from_fact_id: 'fact-1',
-              to_fact_id: 'fact-2',
+              from_lore_id: 'lore-1',
+              to_lore_id: 'lore-2',
               type: 'depends_on',
             })
-          ).rejects.toThrow('Cannot create relation between facts in different projects');
+          ).rejects.toThrow('Cannot create relation between lores in different realms');
         });
       });
 
       describe('delete_relation', () => {
         it('should delete a relation', async () => {
-          mockDb.getFactById = vi.fn()
-            .mockReturnValueOnce(mockFacts[0]) // fromFact
-            .mockReturnValueOnce(mockFacts[1]); // toFact
+          mockDb.findLore = vi.fn()
+            .mockReturnValueOnce(mockLores[0]) // fromLore
+            .mockReturnValueOnce(mockLores[1]); // toLore
           mockDb.deleteRelation = vi.fn();
 
           const result = await server.callTool('delete_relation', {
-            from_fact_id: 'fact-1',
-            to_fact_id: 'fact-2',
+            from_lore_id: 'lore-1',
+            to_lore_id: 'lore-2',
             type: 'depends_on',
           });
 
-          expect(mockDb.deleteRelation).toHaveBeenCalledWith('fact-1', 'fact-2', 'depends_on');
+          expect(mockDb.deleteRelation).toHaveBeenCalledWith('lore-1', 'lore-2', 'depends_on');
           expect(result.deleted).toBe(true);
           expect(result.message).toBe('Relation deleted successfully');
         });
       });
 
       describe('list_relations', () => {
-        it('should list all relations for a fact', async () => {
+        it('should list all relations for a lore', async () => {
           const relations = [
             mockRelation,
             {
-              fromFactId: 'fact-2',
-              toFactId: 'fact-1',
+              fromLoreId: 'lore-2',
+              toLoreId: 'lore-1',
               type: 'contradicts',
               strength: 0.8,
               metadata: null,
@@ -759,17 +761,17 @@ describe('LoreHubServer', () => {
             },
           ];
 
-          mockDb.getFactById = vi.fn()
-            .mockReturnValueOnce(mockFacts[0]) // main fact
-            .mockReturnValueOnce(mockFacts[1]); // related fact
-          mockDb.listRelationsByFact = vi.fn().mockReturnValue(relations);
+          mockDb.findLore = vi.fn()
+            .mockReturnValueOnce(mockLores[0]) // main lore
+            .mockReturnValueOnce(mockLores[1]); // related lore
+          mockDb.listRelationsByLore = vi.fn().mockReturnValue(relations);
 
           const result = await server.callTool('list_relations', {
-            fact_id: 'fact-1',
+            lore_id: 'lore-1',
             direction: 'both',
           });
 
-          expect(mockDb.listRelationsByFact).toHaveBeenCalledWith('fact-1');
+          expect(mockDb.listRelationsByLore).toHaveBeenCalledWith('lore-1');
           expect(result.relations).toHaveLength(2);
           expect(result.relations[0].direction).toBe('outgoing');
           expect(result.relations[1].direction).toBe('incoming');
@@ -779,8 +781,8 @@ describe('LoreHubServer', () => {
           const relations = [
             mockRelation,
             {
-              fromFactId: 'fact-2',
-              toFactId: 'fact-1',
+              fromLoreId: 'lore-2',
+              toLoreId: 'lore-1',
               type: 'contradicts',
               strength: 0.8,
               metadata: null,
@@ -788,83 +790,83 @@ describe('LoreHubServer', () => {
             },
           ];
 
-          mockDb.getFactById = vi.fn().mockReturnValue(mockFacts[0]);
-          mockDb.listRelationsByFact = vi.fn().mockReturnValue(relations);
+          mockDb.findLore = vi.fn().mockReturnValue(mockLores[0]);
+          mockDb.listRelationsByLore = vi.fn().mockReturnValue(relations);
 
           const result = await server.callTool('list_relations', {
-            fact_id: 'fact-1',
+            lore_id: 'lore-1',
             direction: 'from',
           });
 
           expect(result.relations).toHaveLength(1);
-          expect(result.relations[0].fromFactId).toBe('fact-1');
+          expect(result.relations[0].fromLoreId).toBe('lore-1');
         });
       });
     });
 
-    describe('get_project_stats', () => {
-      it('should return comprehensive project statistics', async () => {
-        const facts = [
-          ...mockFacts,
+    describe('get_realm_stats', () => {
+      it('should return comprehensive realm statistics', async () => {
+        const lores = [
+          ...mockLores,
           {
-            id: 'fact-3',
-            projectId: 'proj-123',
+            id: 'lore-3',
+            realmId: 'realm-123',
             content: 'High confidence decision',
-            type: 'decision' as const,
-            services: ['api'],
-            tags: ['important', 'architecture'],
+            type: 'decree' as const,
+            provinces: ['api'],
+            sigils: ['important', 'architecture'],
             confidence: 95,
-            source: { type: 'manual' as const, reference: 'cli' },
-            status: 'active' as const,
+            origin: { type: 'manual' as const, reference: 'cli' },
+            status: 'living' as const,
             createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
             updatedAt: new Date(),
           },
           {
-            id: 'fact-4',
-            projectId: 'proj-123',
+            id: 'lore-4',
+            realmId: 'realm-123',
             content: 'Low confidence assumption',
-            type: 'assumption' as const,
-            services: ['frontend'],
-            tags: ['uncertain', 'review'],
+            type: 'belief' as const,
+            provinces: ['frontend'],
+            sigils: ['uncertain', 'review'],
             confidence: 30,
-            source: { type: 'manual' as const, reference: 'cli' },
+            origin: { type: 'manual' as const, reference: 'cli' },
             status: 'archived' as const,
             createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), // 60 days ago
             updatedAt: new Date(),
           },
         ];
 
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(mockProject);
-        mockDb.listFactsByProject = vi.fn().mockReturnValue(facts);
-        mockDb.listRelationsByFact = vi.fn().mockReturnValue([]);
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(mockRealm);
+        mockDb.listLoresByRealm = vi.fn().mockReturnValue(lores);
+        mockDb.listRelationsByLore = vi.fn().mockReturnValue([]);
 
-        const result = await server.callTool('get_project_stats', {
-          project_path: '/test/project',
+        const result = await server.callTool('get_realm_stats', {
+          realm_path: '/test/realm',
         });
 
-        expect(mockDb.findProjectByPath).toHaveBeenCalledWith('/test/project');
-        expect(mockDb.listFactsByProject).toHaveBeenCalledWith('proj-123');
+        expect(mockDb.findRealmByPath).toHaveBeenCalledWith('/test/realm');
+        expect(mockDb.listLoresByRealm).toHaveBeenCalledWith('realm-123');
         
-        expect(result.statistics.totalFacts).toBe(4);
-        expect(result.statistics.factsByType.decision).toBe(3);
-        expect(result.statistics.factsByType.assumption).toBe(1);
-        expect(result.statistics.factsByStatus.active).toBe(3);
-        expect(result.statistics.factsByStatus.archived).toBe(1);
-        expect(result.statistics.highConfidenceFacts).toBe(2);
-        expect(result.statistics.lowConfidenceFacts).toBe(1);
+        expect(result.statistics.totalLores).toBe(4);
+        expect(result.statistics.loresByType.decree).toBe(3);
+        expect(result.statistics.loresByType.belief).toBe(1);
+        expect(result.statistics.loresByStatus.living).toBe(3);
+        expect(result.statistics.loresByStatus.archived).toBe(1);
+        expect(result.statistics.highConfidenceLores).toBe(2);
+        expect(result.statistics.lowConfidenceLores).toBe(1);
         expect(result.statistics.averageConfidence).toBeGreaterThan(0);
-        expect(result.statistics.factGrowth.lastWeek).toBe(1);
-        expect(result.statistics.topTags.length).toBeGreaterThanOrEqual(6);
+        expect(result.statistics.loreGrowth.lastWeek).toBe(1);
+        expect(result.statistics.topSigils.length).toBeGreaterThanOrEqual(6);
       });
 
-      it('should throw error if project not found', async () => {
-        mockDb.findProjectByPath = vi.fn().mockReturnValue(null);
+      it('should throw error if realm not found', async () => {
+        mockDb.findRealmByPath = vi.fn().mockReturnValue(null);
 
         await expect(
-          server.callTool('get_project_stats', {
-            project_path: '/nonexistent/project',
+          server.callTool('get_realm_stats', {
+            realm_path: '/nonexistent/realm',
           })
-        ).rejects.toThrow('Project not found at path: /nonexistent/project');
+        ).rejects.toThrow('Realm not found at path: /nonexistent/realm');
       });
     });
   });
@@ -877,14 +879,14 @@ describe('LoreHubServer', () => {
     });
 
     it('should handle database errors gracefully', async () => {
-      mockDb.findProjectByPath = vi.fn().mockImplementation(() => {
+      mockDb.findRealmByPath = vi.fn().mockImplementation(() => {
         throw new Error('Database connection failed');
       });
 
       await expect(
-        server.callTool('search_facts', {
+        server.callTool('search_lores', {
           query: 'test',
-          project_path: '/test',
+          realm_path: '/test',
         })
       ).rejects.toThrow('Database connection failed');
     });

@@ -6,23 +6,42 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from '../utils/uuid.js';
-import { projects, facts, relations, type Project as DbProject, type Fact as DbFact, type Relation as DbRelation } from './schema.js';
+import { realms, lores, loreRelations, type Realm as DbRealm, type Lore as DbLore, type LoreRelation as DbLoreRelation } from './schema.js';
 import type { 
-  Fact, 
-  FactType, 
-  FactStatus, 
-  CreateFactInput, 
-  UpdateFactInput,
-  Project,
-  CreateProjectInput,
+  Lore,
+  LoreType,
+  LoreStatus,
+  CreateLoreInput,
+  UpdateLoreInput,
+  Realm,
+  CreateRealmInput,
   CreateRelationInput,
-  Relation
+  Relation,
+  LoreRelation,
+  RelationType
 } from '../core/types.js';
 import * as sqliteVec from 'sqlite-vec';
 import { EmbeddingService } from '../core/embeddings.js';
+import { getSearchCache } from '../core/search-cache.js';
+
+// Raw SQL result type (snake_case fields)
+interface RawLoreRow {
+  id: string;
+  realm_id: string;
+  content: string;
+  why: string | null;
+  type: string;
+  provinces: string;
+  sigils: string;
+  confidence: number;
+  origin: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export class Database {
-  private sqlite: BetterSqlite3.Database;
+  sqlite: BetterSqlite3.Database;  // Made public for migrate-embeddings command
   private db: ReturnType<typeof drizzle>;
   private embeddingService: EmbeddingService;
 
@@ -71,7 +90,7 @@ export class Database {
       // Try different locations for migrations
       let migrationsFolder = join(__dirname, '..', 'drizzle'); // dist/drizzle
       if (!existsSync(migrationsFolder)) {
-        migrationsFolder = join(__dirname, '..', '..', '..', 'drizzle'); // project root drizzle
+        migrationsFolder = join(__dirname, '..', '..', '..', 'drizzle'); // realm root drizzle
       }
       
       // For in-memory databases in tests, we need special handling
@@ -179,93 +198,95 @@ export class Database {
     return this.sqlite.transaction(fn)();
   }
 
-  // Project methods
-  createProject(input: CreateProjectInput): Project {
+  // Realm methods (was Realm)
+  createRealm(input: CreateRealmInput): Realm {
     const id = input.id || uuidv4();
     const now = new Date();
     
-    const project = {
+    const realm = {
       id,
       name: input.name,
       path: input.path,
       gitRemote: input.gitRemote || null,
       isMonorepo: input.isMonorepo || false,
-      services: JSON.stringify(input.services || []),
+      provinces: JSON.stringify(input.provinces || []),
       lastSeen: (input.lastSeen || now).toISOString(),
       createdAt: (input.createdAt || now).toISOString(),
     };
 
-    this.db.insert(projects).values(project).run();
+    this.db.insert(realms).values(realm).run();
     
-    return this.findProject(id)!;
+    return this.findRealm(id)!;
   }
+  
 
-  findProject(id: string): Project | null {
-    const result = this.db.select().from(projects).where(eq(projects.id, id)).get();
-    return result ? this.dbProjectToProject(result) : null;
+  findRealm(id: string): Realm | null {
+    const result = this.db.select().from(realms).where(eq(realms.id, id)).get();
+    return result ? this.dbRealmToRealm(result) : null;
   }
+  
 
-  findProjectByPath(path: string): Project | null {
-    const result = this.db.select().from(projects).where(eq(projects.path, path)).get();
-    return result ? this.dbProjectToProject(result) : null;
+  findRealmByPath(path: string): Realm | null {
+    const result = this.db.select().from(realms).where(eq(realms.path, path)).get();
+    return result ? this.dbRealmToRealm(result) : null;
   }
+  
 
-  updateProjectLastSeen(id: string): Project | null {
-    this.db.update(projects)
+  updateRealmLastSeen(id: string): Realm | null {
+    this.db.update(realms)
       .set({ lastSeen: new Date().toISOString() })
-      .where(eq(projects.id, id))
+      .where(eq(realms.id, id))
       .run();
     
-    return this.findProject(id);
+    return this.findRealm(id);
   }
+  
 
-  listProjects(): Project[] {
-    const results = this.db.select().from(projects).orderBy(desc(projects.lastSeen)).all();
-    return results.map(p => this.dbProjectToProject(p));
+  listRealms(): Realm[] {
+    const results = this.db.select().from(realms).orderBy(desc(realms.lastSeen)).all();
+    return results.map(r => this.dbRealmToRealm(r));
   }
+  
 
-  // Fact methods
-  async createFact(input: CreateFactInput): Promise<Fact> {
+  // Lore methods (was Lore)
+  async createLore(input: CreateLoreInput): Promise<Lore> {
     const id = input.id || uuidv4();
     const now = new Date();
     
-    const fact = {
+    const lore = {
       id,
-      projectId: input.projectId,
+      realmId: input.realmId,
       content: input.content,
       why: input.why || null,
       type: input.type,
-      services: JSON.stringify(input.services || []),
-      tags: JSON.stringify(input.tags || []),
+      provinces: JSON.stringify(input.provinces || []),
+      sigils: JSON.stringify(input.sigils || []),
       confidence: input.confidence || 80,
-      source: JSON.stringify(input.source),
-      status: input.status || 'active',
+      origin: JSON.stringify(input.origin),
+      status: input.status || 'living',
       createdAt: (input.createdAt || now).toISOString(),
       updatedAt: (input.updatedAt || now).toISOString(),
     };
 
-    this.db.insert(facts).values(fact).run();
+    this.db.insert(lores).values(lore).run();
     
-    // Generate embedding for the new fact asynchronously
-    // Don't await to avoid blocking fact creation
-    this.generateFactEmbedding(id).catch(error => {
-      console.error(`Failed to generate embedding for new fact ${id}:`, error);
-    });
+    // Generate embedding for the new lore
+    try {
+      await this.generateLoreEmbedding(id);
+    } catch (error) {
+      console.error(`Failed to generate embedding for new lore ${id}:`, error);
+      // Don't fail lore creation if embedding generation fails
+    }
     
-    return this.findFact(id)!;
+    return this.findLore(id)!;
   }
 
-  findFact(id: string): Fact | null {
-    const result = this.db.select().from(facts).where(eq(facts.id, id)).get();
-    return result ? this.dbFactToFact(result) : null;
-  }
-  
-  // Alias for compatibility
-  getFactById(id: string): Fact | null {
-    return this.findFact(id);
+  findLore(id: string): Lore | null {
+    const result = this.db.select().from(lores).where(eq(lores.id, id)).get();
+    return result ? this.dbLoreToLore(result) : null;
   }
 
-  updateFact(id: string, input: UpdateFactInput): Fact | null {
+  updateLore(id: string, input: UpdateLoreInput): Lore | null {
     const updates: any = {
       updatedAt: new Date().toISOString(),
     };
@@ -273,151 +294,165 @@ export class Database {
     if (input.content !== undefined) updates.content = input.content;
     if (input.why !== undefined) updates.why = input.why;
     if (input.type !== undefined) updates.type = input.type;
-    if (input.services !== undefined) updates.services = JSON.stringify(input.services);
-    if (input.tags !== undefined) updates.tags = JSON.stringify(input.tags);
+    if (input.provinces !== undefined) updates.provinces = JSON.stringify(input.provinces);
+    if (input.sigils !== undefined) updates.sigils = JSON.stringify(input.sigils);
     if (input.confidence !== undefined) updates.confidence = input.confidence;
-    if (input.source !== undefined) updates.source = JSON.stringify(input.source);
+    if (input.origin !== undefined) updates.origin = JSON.stringify(input.origin);
     if (input.status !== undefined) updates.status = input.status;
 
-    this.db.update(facts).set(updates).where(eq(facts.id, id)).run();
+    this.db.update(lores).set(updates).where(eq(lores.id, id)).run();
     
-    return this.findFact(id);
-  }
-  
-  // Alias for compatibility
-  updateFactStatus(id: string, status: FactStatus): void {
-    this.updateFact(id, { status });
+    return this.findLore(id);
   }
 
-  deleteFact(id: string): void {
-    this.db.delete(facts).where(eq(facts.id, id)).run();
+  deleteLore(id: string): void {
+    this.db.delete(lores).where(eq(lores.id, id)).run();
   }
 
-  softDeleteFact(id: string): void {
-    this.db.update(facts)
+  softDeleteLore(id: string): void {
+    this.db.update(lores)
       .set({ 
         status: 'archived',
         updatedAt: new Date().toISOString()
       })
-      .where(eq(facts.id, id))
+      .where(eq(lores.id, id))
       .run();
   }
 
-  restoreFact(id: string): void {
-    this.db.update(facts)
+  restoreLore(id: string): void {
+    this.db.update(lores)
       .set({ 
         status: 'active',
         updatedAt: new Date().toISOString()
       })
-      .where(eq(facts.id, id))
+      .where(eq(lores.id, id))
       .run();
   }
 
-  listFactsByProject(projectId: string): Fact[] {
+  listLoresByRealm(realmId: string): Lore[] {
     const results = this.db.select()
-      .from(facts)
-      .where(eq(facts.projectId, projectId))
-      .orderBy(desc(facts.createdAt))
+      .from(lores)
+      .where(eq(lores.realmId, realmId))
+      .orderBy(desc(lores.createdAt))
       .all();
     
-    return results.map(f => this.dbFactToFact(f));
+    return results.map(l => this.dbLoreToLore(l));
   }
 
-  listFactsByType(projectId: string, type: FactType): Fact[] {
+  listLoresByType(realmId: string, type: LoreType): Lore[] {
+    // Convert old type names to new ones if needed
+    let queryType = type as string;
+    if (queryType === 'decision') queryType = 'decree';
+    else if (queryType === 'learning') queryType = 'lesson';
+    else if (queryType === 'todo') queryType = 'quest';
+    
     const results = this.db.select()
-      .from(facts)
-      .where(and(eq(facts.projectId, projectId), eq(facts.type, type)))
-      .orderBy(desc(facts.createdAt))
+      .from(lores)
+      .where(and(eq(lores.realmId, realmId), eq(lores.type, queryType)))
+      .orderBy(desc(lores.createdAt))
       .all();
     
-    return results.map(f => this.dbFactToFact(f));
+    return results.map(l => this.dbLoreToLore(l));
   }
 
-  listFactsByService(projectId: string, service: string): Fact[] {
+  listLoresByProvince(realmId: string, province: string): Lore[] {
     // Use SQL LIKE with JSON array search pattern
     const results = this.db.select()
-      .from(facts)
+      .from(lores)
       .where(and(
-        eq(facts.projectId, projectId),
-        like(facts.services, `%"${service}"%`)
+        eq(lores.realmId, realmId),
+        like(lores.provinces, `%"${province}"%`)
       ))
-      .orderBy(desc(facts.createdAt))
+      .orderBy(desc(lores.createdAt))
       .all();
     
-    return results.map(f => this.dbFactToFact(f));
+    return results.map(l => this.dbLoreToLore(l));
   }
 
-  searchFacts(projectId: string, query: string, limit?: number): Fact[] {
+  searchLores(realmId: string, query: string, limit?: number): Lore[] {
     // Convert wildcards to SQL patterns
     const pattern = `%${query.replace(/\*/g, '%').replace(/\?/g, '_')}%`;
     
     const baseQuery = this.db.select()
-      .from(facts)
+      .from(lores)
       .where(and(
-        eq(facts.projectId, projectId),
+        eq(lores.realmId, realmId),
         or(
-          like(facts.content, pattern),
-          like(facts.tags, pattern)
+          like(lores.content, pattern),
+          like(lores.sigils, pattern)
         )
       ))
-      .orderBy(desc(facts.createdAt));
+      .orderBy(desc(lores.createdAt));
     
     const results = limit ? baseQuery.limit(limit).all() : baseQuery.all();
-    return results.map(f => this.dbFactToFact(f));
+    return results.map(l => this.dbLoreToLore(l));
   }
 
-  searchFactsGlobal(query: string, limit?: number): Fact[] {
+  searchLoresGlobal(query: string, limit?: number): Lore[] {
     // Convert wildcards to SQL patterns
     const pattern = `%${query.replace(/\*/g, '%').replace(/\?/g, '_')}%`;
     
     const baseQuery = this.db.select()
-      .from(facts)
+      .from(lores)
       .where(or(
-        like(facts.content, pattern),
-        like(facts.tags, pattern)
+        like(lores.content, pattern),
+        like(lores.sigils, pattern)
       ))
-      .orderBy(desc(facts.createdAt));
+      .orderBy(desc(lores.createdAt));
     
     const results = limit ? baseQuery.limit(limit).all() : baseQuery.all();
-    return results.map(f => this.dbFactToFact(f));
+    return results.map(l => this.dbLoreToLore(l));
   }
 
-  getProjectFactCount(projectId: string): number {
+  getRealmLoreCount(realmId: string): number {
     const result = this.db.select({ count: sql<number>`count(*)` })
-      .from(facts)
-      .where(eq(facts.projectId, projectId))
+      .from(lores)
+      .where(eq(lores.realmId, realmId))
       .get();
     
     return result?.count || 0;
   }
 
   // Vector/Semantic Search methods
-  async semanticSearchFacts(
+  async semanticSearchLores(
     query: string,
     options: {
-      projectId?: string;
+      realmId?: string;
       threshold?: number;
       limit?: number;
       includeScore?: boolean;
     } = {}
-  ): Promise<(Fact & { similarity?: number })[]> {
+  ): Promise<(Lore & { similarity?: number })[]> {
     try {
-      // Generate embedding for query
-      const queryEmbedding = await this.embeddingService.generateEmbedding(query);
+      const cache = getSearchCache();
+      
+      // Check cache for results
+      const cachedResults = cache.getResults(query, options);
+      if (cachedResults) {
+        return cachedResults;
+      }
+      
+      // Check cache for embedding
+      let queryEmbedding = cache.getEmbedding(query);
+      if (!queryEmbedding) {
+        // Generate embedding for query
+        queryEmbedding = await this.embeddingService.generateEmbedding(query);
+        cache.setEmbedding(query, queryEmbedding);
+      }
       
       // Build the query based on options
       let sqlQuery = `
-        SELECT f.*, vec_distance_l2(v.embedding, ?) as distance
-        FROM facts f
-        JOIN facts_vec v ON f.id = v.fact_id
+        SELECT l.*, vec_distance_l2(v.embedding, ?) as distance
+        FROM lores l
+        JOIN lores_vec v ON l.id = v.lore_id
         WHERE 1=1
       `;
       
       const params: any[] = [queryEmbedding];
       
-      if (options.projectId) {
-        sqlQuery += ` AND f.project_id = ?`;
-        params.push(options.projectId);
+      if (options.realmId) {
+        sqlQuery += ` AND l.realm_id = ?`;
+        params.push(options.realmId);
       }
       
       // Add threshold filter if specified
@@ -433,211 +468,247 @@ export class Database {
         params.push(options.limit);
       }
       
-      const results = this.sqlite.prepare(sqlQuery).all(...params) as any[];
+      const results = this.sqlite.prepare(sqlQuery).all(...params) as (RawLoreRow & { distance: number })[];
       
-      return results.map(row => {
-        const fact = this.dbFactToFact(row);
+      const mappedResults = results.map(row => {
+        const lore = this.dbLoreToLore(row);
         if (options.includeScore) {
           // Convert distance to similarity score (0-1, where 1 is most similar)
           // Using a simple inverse distance formula
           const similarity = 1 / (1 + row.distance);
-          return { ...fact, similarity };
+          return { ...lore, similarity };
         }
-        return fact;
+        return lore;
       });
+      
+      // Cache the results
+      cache.setResults(query, options, mappedResults);
+      
+      return mappedResults;
     } catch (error) {
       console.error('Semantic search failed:', error);
       // Fallback to regular search
-      return this.searchFacts(options.projectId || '', query, options.limit);
+      return this.searchLores(options.realmId || '', query, options.limit);
     }
   }
 
-  async findSimilarFacts(
-    factId: string,
+  async findSimilarLores(
+    loreId: string,
     options: { limit?: number; threshold?: number } = {}
-  ): Promise<(Fact & { similarity: number })[]> {
-    const fact = this.findFact(factId);
-    if (!fact) return [];
+  ): Promise<(Lore & { similarity: number })[]> {
+    const lore = this.findLore(loreId);
+    if (!lore) return [];
     
-    // Format fact for embedding
-    const factText = this.embeddingService.formatFactForEmbedding({
-      content: fact.content,
-      why: fact.why,
-      tags: fact.tags,
-      type: fact.type
+    // Format lore for embedding
+    const loreText = this.embeddingService.formatLoreForEmbedding({
+      content: lore.content,
+      why: lore.why,
+      sigils: lore.sigils,
+      type: lore.type
     });
     
-    // Search for similar facts, excluding the original
-    const results = await this.semanticSearchFacts(factText, {
-      projectId: fact.projectId,
+    // Search for similar lores, excluding the original
+    const results = await this.semanticSearchLores(loreText, {
+      realmId: lore.realmId,
       limit: (options.limit || 10) + 1, // Get one extra to exclude self
       includeScore: true
     });
     
-    // Filter out the original fact and apply threshold
+    // Filter out the original lore and apply threshold
     const threshold = options.threshold || 0;
     return results
-      .filter(f => f.id !== factId && f.similarity !== undefined && f.similarity >= threshold)
-      .slice(0, options.limit || 10) as (Fact & { similarity: number })[];
+      .filter(l => l.id !== loreId && l.similarity !== undefined && l.similarity >= threshold)
+      .slice(0, options.limit || 10) as (Lore & { similarity: number })[];
   }
 
-  async generateFactEmbedding(factId: string): Promise<void> {
-    const fact = this.findFact(factId);
-    if (!fact) {
-      throw new Error(`Fact ${factId} not found`);
+  async generateLoreEmbedding(loreId: string): Promise<void> {
+    const lore = this.findLore(loreId);
+    if (!lore) {
+      throw new Error(`Lore ${loreId} not found`);
     }
     
-    // Format fact for embedding
-    const factText = this.embeddingService.formatFactForEmbedding({
-      content: fact.content,
-      why: fact.why,
-      tags: fact.tags,
-      type: fact.type
+    // Format lore for embedding
+    const loreText = this.embeddingService.formatLoreForEmbedding({
+      content: lore.content,
+      why: lore.why,
+      sigils: lore.sigils,
+      type: lore.type
     });
     
     // Generate embedding
-    const embedding = await this.embeddingService.generateEmbedding(factText);
+    const embedding = await this.embeddingService.generateEmbedding(loreText);
     
     // Store embedding
     try {
-      this.sqlite.prepare(`
-        INSERT OR REPLACE INTO facts_vec (fact_id, embedding)
-        VALUES (?, ?)
-      `).run(factId, embedding);
+      // First try to delete existing embedding (for virtual tables, REPLACE might not work)
+      this.sqlite.prepare(`DELETE FROM lores_vec WHERE lore_id = ?`).run(loreId);
       
-      // Mark fact as having embedding
+      // Then insert the new embedding
       this.sqlite.prepare(`
-        UPDATE facts SET embedding_generated = 1 WHERE id = ?
-      `).run(factId);
+        INSERT INTO lores_vec (lore_id, embedding)
+        VALUES (?, ?)
+      `).run(loreId, embedding);
+      
+      // Note: We no longer track embedding_generated in the lores table
+      // The presence of a record in lores_vec indicates an embedding exists
     } catch (error) {
-      console.error(`Failed to store embedding for fact ${factId}:`, error);
+      console.error(`Failed to store embedding for lore ${loreId}:`, error);
       throw error;
     }
   }
 
-  async generateMissingEmbeddings(projectId?: string, batchSize: number = 50): Promise<number> {
-    let query = `
-      SELECT * FROM facts 
-      WHERE embedding_generated = 0 OR embedding_generated IS NULL
-    `;
+  recreateLoresVecTable(dimensions: number): void {
+    try {
+      // Drop the existing table
+      this.sqlite.exec('DROP TABLE IF EXISTS lores_vec');
+      
+      // Recreate with new dimensions
+      this.sqlite.exec(`
+        CREATE VIRTUAL TABLE lores_vec USING vec0(
+          lore_id text PRIMARY KEY,
+          embedding float[${dimensions}]
+        )
+      `);
+      
+      console.log(`✓ Recreated lores_vec table with ${dimensions} dimensions`);
+    } catch (error) {
+      console.error('Failed to recreate lores_vec table:', error);
+      throw error;
+    }
+  }
+  
+  async generateMissingEmbeddings(realmId?: string, batchSize: number = 50, force: boolean = false): Promise<number> {
+    let query: string;
+    
+    if (force) {
+      // When force is true, get all lores regardless of existing embeddings
+      query = `SELECT l.* FROM lores l WHERE 1=1`;
+    } else {
+      // Only get lores without embeddings
+      query = `
+        SELECT l.* FROM lores l
+        LEFT JOIN lores_vec v ON l.id = v.lore_id
+        WHERE v.lore_id IS NULL
+      `;
+    }
     
     const params: any[] = [];
-    if (projectId) {
-      query += ` AND projectId = ?`;
-      params.push(projectId);
+    if (realmId) {
+      query += ` AND l.realm_id = ?`;
+      params.push(realmId);
     }
     
     query += ` LIMIT ?`;
     params.push(batchSize);
     
-    const factsToEmbed = this.sqlite.prepare(query).all(...params) as DbFact[];
+    const loresToEmbed = this.sqlite.prepare(query).all(...params) as DbLore[];
     
     let count = 0;
-    for (const dbFact of factsToEmbed) {
+    for (const dbLore of loresToEmbed) {
       try {
-        await this.generateFactEmbedding(dbFact.id);
+        await this.generateLoreEmbedding(dbLore.id);
         count++;
       } catch (error) {
-        console.error(`Failed to generate embedding for fact ${dbFact.id}:`, error);
+        console.error(`Failed to generate embedding for lore ${dbLore.id}:`, error);
       }
     }
     
     return count;
   }
 
-  // Check if a fact might be a duplicate
+  // Check if a lore might be a duplicate
   async checkForDuplicates(
     content: string,
-    projectId: string,
+    realmId: string,
     threshold: number = 0.85
-  ): Promise<(Fact & { similarity: number })[]> {
-    const results = await this.semanticSearchFacts(content, {
-      projectId,
+  ): Promise<(Lore & { similarity: number })[]> {
+    const results = await this.semanticSearchLores(content, {
+      realmId,
       threshold: 1 - threshold, // Convert similarity to distance threshold
       limit: 5,
       includeScore: true
     });
     
-    return results.filter(f => f.similarity !== undefined && f.similarity >= threshold) as (Fact & { similarity: number })[];
+    return results.filter(l => l.similarity !== undefined && l.similarity >= threshold) as (Lore & { similarity: number })[];
   }
 
   // Relation methods
   createRelation(input: CreateRelationInput): Relation {
     const relation = {
-      fromFactId: input.fromFactId,
-      toFactId: input.toFactId,
+      fromLoreId: input.fromLoreId,
+      toLoreId: input.toLoreId,
       type: input.type,
       strength: input.strength || 1.0,
       metadata: input.metadata ? JSON.stringify(input.metadata) : null,
       createdAt: (input.createdAt || new Date()).toISOString(),
     };
 
-    this.db.insert(relations).values(relation).run();
+    this.db.insert(loreRelations).values(relation).run();
     
-    return this.dbRelationToRelation(relation as DbRelation);
+    return this.dbRelationToRelation(relation as DbLoreRelation);
   }
 
-  listRelationsByFact(factId: string): Relation[] {
+  listRelationsByLore(loreId: string): LoreRelation[] {
     const results = this.db.select()
-      .from(relations)
+      .from(loreRelations)
       .where(or(
-        eq(relations.fromFactId, factId),
-        eq(relations.toFactId, factId)
+        eq(loreRelations.fromLoreId, loreId),
+        eq(loreRelations.toLoreId, loreId)
       ))
       .all();
     
     return results.map(r => this.dbRelationToRelation(r));
   }
 
-  deleteRelation(fromFactId: string, toFactId: string, type: string): void {
-    this.db.delete(relations)
+  deleteRelation(fromLoreId: string, toLoreId: string, type: string): void {
+    this.db.delete(loreRelations)
       .where(and(
-        eq(relations.fromFactId, fromFactId),
-        eq(relations.toFactId, toFactId),
-        eq(relations.type, type)
+        eq(loreRelations.fromLoreId, fromLoreId),
+        eq(loreRelations.toLoreId, toLoreId),
+        eq(loreRelations.type, type)
       ))
       .run();
   }
 
   // Export/Import methods
-  exportData(projectId?: string): {
-    projects: Project[];
-    facts: Fact[];
+  exportData(realmId?: string): {
+    realms: Realm[];
+    lores: Lore[];
     relations: Relation[];
   } {
-    if (projectId) {
-      const project = this.findProject(projectId);
-      if (!project) {
-        throw new Error(`Project ${projectId} not found`);
+    if (realmId) {
+      const realm = this.findRealm(realmId);
+      if (!realm) {
+        throw new Error(`Realm ${realmId} not found`);
       }
       
-      const projectFacts = this.listFactsByProject(projectId);
-      const factIds = new Set(projectFacts.map(f => f.id));
+      const realmLores = this.listLoresByRealm(realmId);
+      const loreIds = new Set(realmLores.map(l => l.id));
       
       const relevantRelations = this.db.select()
-        .from(relations)
+        .from(loreRelations)
         .all()
-        .filter(r => factIds.has(r.fromFactId) || factIds.has(r.toFactId))
+        .filter(r => loreIds.has(r.fromLoreId) || loreIds.has(r.toLoreId))
         .map(r => this.dbRelationToRelation(r));
       
       return {
-        projects: [project],
-        facts: projectFacts,
+        realms: [realm],
+        lores: realmLores,
         relations: relevantRelations,
       };
     }
     
     return {
-      projects: this.listProjects(),
-      facts: this.searchFactsGlobal('*'),
-      relations: this.db.select().from(relations).all().map(r => this.dbRelationToRelation(r)),
+      realms: this.listRealms(),
+      lores: this.searchLoresGlobal('*'),
+      relations: this.db.select().from(loreRelations).all().map(r => this.dbRelationToRelation(r)),
     };
   }
 
   importData(
     data: {
-      projects: CreateProjectInput[];
-      facts: CreateFactInput[];
+      realms: CreateRealmInput[];
+      lores: CreateLoreInput[];
       relations: CreateRelationInput[];
     },
     mode: 'replace' | 'merge' = 'replace'
@@ -645,27 +716,27 @@ export class Database {
     this.transaction(() => {
       if (mode === 'replace') {
         // Clear existing data
-        this.db.delete(relations).run();
-        this.db.delete(facts).run();
-        this.db.delete(projects).run();
+        this.db.delete(loreRelations).run();
+        this.db.delete(lores).run();
+        this.db.delete(realms).run();
       }
       
-      // Import projects
-      for (const project of data.projects) {
+      // Import realms
+      for (const realm of data.realms) {
         if (mode === 'merge') {
-          const existing = this.findProject(project.id!);
+          const existing = this.findRealm(realm.id!);
           if (existing) continue;
         }
-        this.createProject(project);
+        this.createRealm(realm);
       }
       
-      // Import facts
-      for (const fact of data.facts) {
+      // Import lores
+      for (const lore of data.lores) {
         if (mode === 'merge') {
-          const existing = this.findFact(fact.id!);
+          const existing = this.findLore(lore.id!);
           if (existing) continue;
         }
-        this.createFact(fact);
+        this.createLore(lore);
       }
       
       // Import relations
@@ -673,11 +744,11 @@ export class Database {
         if (mode === 'merge') {
           // Check if relation already exists
           const existing = this.db.select()
-            .from(relations)
+            .from(loreRelations)
             .where(and(
-              eq(relations.fromFactId, relation.fromFactId),
-              eq(relations.toFactId, relation.toFactId),
-              eq(relations.type, relation.type)
+              eq(loreRelations.fromLoreId, relation.fromLoreId),
+              eq(loreRelations.toLoreId, relation.toLoreId),
+              eq(loreRelations.type, relation.type)
             ))
             .get();
           if (existing) continue;
@@ -688,41 +759,44 @@ export class Database {
   }
 
   // Helper methods to convert between DB and domain types
-  private dbProjectToProject(dbProject: DbProject): Project {
+  private dbRealmToRealm(dbRealm: DbRealm): Realm {
     return {
-      id: dbProject.id,
-      name: dbProject.name,
-      path: dbProject.path,
-      gitRemote: dbProject.gitRemote || undefined,
-      isMonorepo: dbProject.isMonorepo,
-      services: JSON.parse(dbProject.services),
-      lastSeen: new Date(dbProject.lastSeen),
-      createdAt: new Date(dbProject.createdAt),
+      id: dbRealm.id,
+      name: dbRealm.name,
+      path: dbRealm.path,
+      gitRemote: dbRealm.gitRemote || undefined,
+      isMonorepo: dbRealm.isMonorepo,
+      provinces: JSON.parse(dbRealm.provinces),
+      lastSeen: new Date(dbRealm.lastSeen),
+      createdAt: new Date(dbRealm.createdAt),
     };
   }
 
-  private dbFactToFact(dbFact: DbFact): Fact {
+  private dbLoreToLore(dbLore: DbLore | RawLoreRow): Lore {
+    // Check if it's a raw SQL result (has snake_case fields)
+    const isRawRow = 'realm_id' in dbLore;
+    
     return {
-      id: dbFact.id,
-      projectId: dbFact.projectId,
-      content: dbFact.content,
-      why: dbFact.why || undefined,
-      type: dbFact.type as FactType,
-      services: JSON.parse(dbFact.services),
-      tags: JSON.parse(dbFact.tags),
-      confidence: dbFact.confidence,
-      source: JSON.parse(dbFact.source),
-      status: dbFact.status as FactStatus,
-      createdAt: new Date(dbFact.createdAt),
-      updatedAt: new Date(dbFact.updatedAt),
+      id: dbLore.id,
+      realmId: isRawRow ? (dbLore as RawLoreRow).realm_id : (dbLore as DbLore).realmId,
+      content: dbLore.content,
+      why: dbLore.why || undefined,
+      type: dbLore.type as LoreType,
+      provinces: JSON.parse(dbLore.provinces),
+      sigils: JSON.parse(dbLore.sigils),
+      confidence: dbLore.confidence,
+      origin: JSON.parse(dbLore.origin),
+      status: dbLore.status as LoreStatus,
+      createdAt: new Date(isRawRow ? (dbLore as RawLoreRow).created_at : (dbLore as DbLore).createdAt),
+      updatedAt: new Date(isRawRow ? (dbLore as RawLoreRow).updated_at : (dbLore as DbLore).updatedAt),
     };
   }
 
-  private dbRelationToRelation(dbRelation: DbRelation): Relation {
+  private dbRelationToRelation(dbRelation: DbLoreRelation): LoreRelation {
     return {
-      fromFactId: dbRelation.fromFactId,
-      toFactId: dbRelation.toFactId,
-      type: dbRelation.type as any,
+      fromLoreId: dbRelation.fromLoreId,
+      toLoreId: dbRelation.toLoreId,
+      type: dbRelation.type as RelationType,
       strength: dbRelation.strength,
       metadata: dbRelation.metadata ? JSON.parse(dbRelation.metadata) : undefined,
       createdAt: new Date(dbRelation.createdAt),

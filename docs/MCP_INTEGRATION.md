@@ -92,17 +92,17 @@ In your project root, create a `.cursorrules` file:
 When working in this project, you have access to LoreHub for querying project knowledge.
 
 Available LoreHub commands:
-- Use search_facts to find relevant decisions, constraints, or learnings
-- Use list_facts to browse all facts for the current project
-- Use get_fact to retrieve specific fact details
-- Use list_projects to see all projects in the knowledge base
+- Use search_lores to find relevant decrees, constraints, or lessons
+- Use list_lores to browse all lores for the current realm
+- Use get_lore to retrieve specific lore details
+- Use list_realms to see all realms in the knowledge base
 
-Project path for this workspace: ${workspaceFolder}
+Realm path for this workspace: ${workspaceFolder}
 
-Before making architectural decisions or significant changes, search for existing facts:
-- Search for related decisions: search_facts(query: "architecture", project_path: "${workspaceFolder}")
-- Check constraints: search_facts(query: "constraint", type: "constraint", project_path: "${workspaceFolder}")
-- Review past learnings: search_facts(query: "*", type: "learning", project_path: "${workspaceFolder}")
+Before making architectural choices or significant changes, search for existing lores:
+- Search for related decrees: search_lores(query: "architecture", realm_path: "${workspaceFolder}")
+- Check constraints: search_lores(query: "constraint", type: "constraint", realm_path: "${workspaceFolder}")
+- Review past lessons: search_lores(query: "*", type: "lesson", realm_path: "${workspaceFolder}")
 ```
 
 ### 2. Configure Cursor Settings
@@ -139,10 +139,10 @@ Open `~/.continue/config.json` and add:
       "name": "lorehub",
       "command": "lorehub-mcp",
       "args": [],
-      "description": "Access project knowledge and decisions"
+      "description": "Access realm knowledge and decrees"
     }
   ],
-  "systemMessage": "You have access to LoreHub for querying project knowledge. Use search_facts, list_facts, get_fact, and list_projects tools to find relevant information before making suggestions."
+  "systemMessage": "You have access to LoreHub for querying realm knowledge. Use search_lores, list_lores, get_lore, and list_realms tools to find relevant information before making suggestions."
 }
 ```
 
@@ -154,37 +154,37 @@ Restart VS Code for the changes to take effect.
 
 Once configured, you can use LoreHub in your AI conversations.
 
-**Note**: LoreHub operates as a global knowledge hub - by default, all searches and lists include facts from ALL your projects. This helps you leverage learnings and decisions across your entire codebase. Facts from your current project are prioritized in results.
+**Note**: LoreHub operates as a global knowledge hub - by default, all searches and lists include lores from ALL your realms. This helps you leverage lessons and decrees across your entire codebase. Lores from your current realm are prioritized in results.
 
-### Example 1: Searching for Decisions Across All Projects
+### Example 1: Searching for Decrees Across All Realms
 
 ```
-User: What databases have we decided to use across our projects?
+User: What databases have we decided to use across our realms?
 
-AI: I'll search for database-related decisions across all your projects.
+AI: I'll search for database-related decrees across all your realms.
 
-[Calls search_facts with query: "database"]
+[Calls search_lores with query: "database"]
 
-I found database decisions from 3 projects:
+I found database decrees from 3 realms:
 - **api-service**: PostgreSQL for ACID compliance
 - **analytics-service**: ClickHouse for time-series data
 - **cache-service**: Redis for session storage
 
-Would you like details about any specific project's database choice?
+Would you like details about any specific realm's database choice?
 ```
 
-### Example 2: Checking Constraints for Current Project
+### Example 2: Checking Constraints for Current Realm
 
 ```
-User: Can we add a new microservice for user authentication in this project?
+User: Can we add a new microservice for user authentication in this realm?
 
-AI: Let me check constraints across all projects, focusing on authentication and microservices.
+AI: Let me check constraints across all realms, focusing on authentication and microservices.
 
-[Calls search_facts with query: "microservice", type: "constraint"]
-[Calls search_facts with query: "authentication"]
+[Calls search_lores with query: "microservice", type: "constraint"]
+[Calls search_lores with query: "authentication"]
 
-I found relevant constraints from multiple projects:
-- **platform** (your current project): All new microservices must be approved by architecture team
+I found relevant constraints from multiple realms:
+- **platform** (your current realm): All new microservices must be approved by architecture team
 - **auth-service**: Must use existing SSO service, no custom authentication
 - **api-gateway**: Authentication must be handled at gateway level
 
@@ -194,14 +194,14 @@ These constraints apply across your organization. Would you like me to find the 
 ### Example 3: Learning from Past Issues
 
 ```
-User: We're seeing slow query performance. Any past learnings about this?
+User: We're seeing slow query performance. Any past lessons about this?
 
-AI: I'll search for performance-related learnings from your project history.
+AI: I'll search for performance-related lessons from your realm history.
 
-[Calls search_facts with query: "performance", type: "learning", project_path: "/current/project"]
-[Calls search_facts with query: "slow query", type: "learning", project_path: "/current/project"]
+[Calls search_lores with query: "performance", type: "lesson", realm_path: "/current/realm"]
+[Calls search_lores with query: "slow query", type: "lesson", realm_path: "/current/realm"]
 
-Found several relevant learnings:
+Found several relevant lessons:
 1. "Always add indexes on foreign key columns" - learned after a 10x performance improvement
 2. "Use connection pooling with minimum 10 connections" - resolved timeout issues
 3. "Avoid N+1 queries by using eager loading" - reduced API response time by 50%
@@ -212,15 +212,15 @@ Found several relevant learnings:
 ```
 User: Review this PR that adds a caching layer.
 
-AI: Let me check for any relevant decisions or constraints about caching.
+AI: Let me check for any relevant decrees or constraints about caching.
 
-[Calls search_facts with query: "cache", project_path: "/current/project"]
-[Calls search_facts with query: "redis", project_path: "/current/project"]
+[Calls search_lores with query: "cache", realm_path: "/current/realm"]
+[Calls search_lores with query: "redis", realm_path: "/current/realm"]
 
-Based on your project's facts:
-- You decided to use Redis for caching (90% confidence)
+Based on your realm's lores:
+- You decreed to use Redis for caching (90% confidence)
 - There's a constraint: cache TTL must not exceed 1 hour for user data
-- Past learning: "Always implement cache warming for critical paths"
+- Past lesson: "Always implement cache warming for critical paths"
 
 The PR looks good but ensure it follows these guidelines.
 ```
@@ -256,7 +256,7 @@ lorehub-mcp 2>&1 | head -20
 ls -la ~/.lorehub/
 
 # Initialize if needed
-lh project init
+lh realm init
 ```
 
 #### 4. Permission Errors
@@ -295,18 +295,18 @@ To enable debug logging, set the `DEBUG` environment variable:
 
 ## Best Practices
 
-1. **Regular Fact Capture**: Encourage team members to capture decisions as they're made
-2. **Consistent Tagging**: Use consistent tags for better searchability
-3. **High-Quality "Why"**: Always include the reasoning behind decisions
-4. **Periodic Reviews**: Review and update facts quarterly
-5. **AI Integration**: Configure your AI tools to check facts before suggesting changes
+1. **Regular Lore Capture**: Encourage team members to capture decrees as they're made
+2. **Consistent Tagging**: Use consistent sigils for better searchability
+3. **High-Quality "Why"**: Always include the reasoning behind decrees
+4. **Periodic Reviews**: Review and update lores quarterly
+5. **AI Integration**: Configure your AI tools to check lores before suggesting changes
 
 ## Security Considerations
 
-- LoreHub MCP server has read-only access to your facts database
-- It cannot modify or delete facts (use the CLI for that)
+- LoreHub MCP server has read-only access to your lores database
+- It cannot modify or delete lores (use the CLI for that)
 - The server runs locally and doesn't send data externally
-- Project paths are validated to prevent directory traversal attacks
+- Realm paths are validated to prevent directory traversal attacks
 
 ## Advanced Configuration
 
@@ -326,9 +326,9 @@ To enable debug logging, set the `DEBUG` environment variable:
 }
 ```
 
-### Multiple Projects
+### Multiple Realms
 
-For different database per project:
+For different database per realm:
 
 ```json
 {
@@ -337,14 +337,14 @@ For different database per project:
       "command": "lorehub-mcp",
       "args": [],
       "env": {
-        "LOREHUB_DB_PATH": "/path/to/project1/lorehub.db"
+        "LOREHUB_DB_PATH": "/path/to/realm1/lorehub.db"
       }
     },
     "lorehub-project2": {
       "command": "lorehub-mcp",
       "args": [],
       "env": {
-        "LOREHUB_DB_PATH": "/path/to/project2/lorehub.db"
+        "LOREHUB_DB_PATH": "/path/to/realm2/lorehub.db"
       }
     }
   }

@@ -2,59 +2,68 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
+import { AlternativeScreenView } from './AlternativeScreenView.js';
+import { useTerminalDimensions } from '../hooks/useTerminalDimensions.js';
 import type { Database } from '../../db/database.js';
-import type { Project, FactType, CreateFactInput } from '../../core/types.js';
-import { getProjectInfo } from '../utils/project.js';
+import type { Realm, LoreType, CreateLoreInput } from '../../core/types.js';
+import { getRealmInfo } from '../utils/realm.js';
 
-interface AddFactProps {
+interface AddLoreProps {
   db: Database;
-  projectPath: string;
+  realmPath: string;
   initialContent?: string;
-  initialType?: FactType;
+  initialType?: LoreType;
   initialWhy?: string;
-  initialServices?: string[];
-  initialTags?: string[];
+  initialProvinces?: string[];
+  initialSigils?: string[];
   initialConfidence?: number;
   onComplete?: (success: boolean) => void;
 }
 
-type FormField = 'content' | 'type' | 'why' | 'services' | 'tags' | 'confidence';
+type FormField = 'content' | 'type' | 'why' | 'provinces' | 'sigils' | 'confidence';
 
-const factTypes: Array<{ label: string; value: FactType }> = [
-  { label: 'Decision', value: 'decision' },
-  { label: 'Learning', value: 'learning' },
-  { label: 'Assumption', value: 'assumption' },
+const loreTypes: Array<{ label: string; value: LoreType }> = [
+  { label: 'Decree', value: 'decree' },
+  { label: 'Wisdom', value: 'wisdom' },
+  { label: 'Belief', value: 'belief' },
   { label: 'Constraint', value: 'constraint' },
   { label: 'Requirement', value: 'requirement' },
   { label: 'Risk', value: 'risk' },
-  { label: 'Todo', value: 'todo' },
+  { label: 'Quest', value: 'quest' },
+  { label: 'Saga', value: 'saga' },
+  { label: 'Story', value: 'story' },
+  { label: 'Anomaly', value: 'anomaly' },
   { label: 'Other', value: 'other' },
 ];
 
-const typeDescriptions: Record<FactType, string> = {
-  decision: 'Architectural or technical choice',
-  learning: 'Something discovered or learned',
-  assumption: 'Unverified belief or hypothesis',
-  constraint: 'Limitation or requirement',
+const typeDescriptions: Record<LoreType, string> = {
+  decree: 'Architectural or technical choice',
+  wisdom: 'Something discovered or learned',
+  belief: 'Unverified belief or hypothesis',
+  constraint: 'Limitation or restriction',
   requirement: 'Business or technical requirement',
   risk: 'Potential problem or concern',
-  todo: 'Future action needed',
-  other: 'Miscellaneous fact',
+  quest: 'Future action needed',
+  saga: 'Major initiative that will generate many lores',
+  story: 'User story',
+  anomaly: 'Bug or issue',
+  other: 'Miscellaneous lore',
 };
 
-export function AddFact({
+export function AddLore({
   db,
-  projectPath,
+  realmPath,
   initialContent = '',
-  initialType = 'decision',
+  initialType = 'decree',
   initialWhy = '',
-  initialServices = [],
-  initialTags = [],
+  initialProvinces = [],
+  initialSigils = [],
   initialConfidence = 80,
   onComplete,
-}: AddFactProps) {
+}: AddLoreProps) {
   const { exit } = useApp();
-  const [project, setProject] = useState<Project | null>(null);
+  const { columns, rows } = useTerminalDimensions();
+  const [realm, setRealm] = useState<Realm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -66,48 +75,48 @@ export function AddFact({
   const [content, setContent] = useState(initialContent);
   const [type, setType] = useState(initialType);
   const [why, setWhy] = useState(initialWhy);
-  const [servicesText, setServicesText] = useState(initialServices.join(', '));
-  const [tagsText, setTagsText] = useState(initialTags.join(', '));
+  const [provincesText, setProvincesText] = useState(initialProvinces.join(', '));
+  const [sigilsText, setSigilsText] = useState(initialSigils.join(', '));
   const [confidence, setConfidence] = useState(initialConfidence);
   const [duplicates, setDuplicates] = useState<Array<{ content: string; similarity: number }>>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
-  // Load or create project
+  // Load or create realm
   useEffect(() => {
-    async function loadProject() {
+    async function loadRealm() {
       try {
-        const projectInfo = await getProjectInfo(projectPath);
-        let existingProject = db.findProjectByPath(projectPath);
+        const realmInfo = await getRealmInfo(realmPath);
+        let existingRealm = db.findRealmByPath(realmPath);
         
-        if (!existingProject) {
-          existingProject = db.createProject({
-            name: projectInfo.name,
-            path: projectInfo.path,
-            gitRemote: projectInfo.gitRemote,
-            isMonorepo: projectInfo.isMonorepo,
-            services: projectInfo.services,
+        if (!existingRealm) {
+          existingRealm = db.createRealm({
+            name: realmInfo.name,
+            path: realmInfo.path,
+            gitRemote: realmInfo.gitRemote,
+            isMonorepo: realmInfo.isMonorepo,
+            provinces: realmInfo.provinces,
           });
         } else {
-          db.updateProjectLastSeen(existingProject.id);
+          db.updateRealmLastSeen(existingRealm.id);
         }
         
-        setProject(existingProject);
+        setRealm(existingRealm);
         setLoading(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load project');
+        setError(err instanceof Error ? err.message : 'Failed to load realm');
         setLoading(false);
       }
     }
     
-    loadProject();
-  }, [db, projectPath]);
+    loadRealm();
+  }, [db, realmPath]);
 
   const handleSubmit = async () => {
     if (isSubmitting || success) {
       return; // Prevent duplicate submissions
     }
     
-    if (!project || !content.trim()) {
+    if (!realm || !content.trim()) {
       setError('Content is required');
       setTimeout(() => setError(null), 3000);
       return;
@@ -120,7 +129,7 @@ export function AddFact({
       if (!showDuplicateWarning) {
         const potentialDuplicates = await db.checkForDuplicates(
           content.trim(),
-          project.id,
+          realm.id,
           0.85 // 85% similarity threshold
         );
         
@@ -135,22 +144,22 @@ export function AddFact({
         }
       }
       
-      const factInput: CreateFactInput = {
-        projectId: project.id,
+      const loreInput: CreateLoreInput = {
+        realmId: realm.id,
         content: content.trim(),
         type,
         why: why.trim() || undefined,
-        services: servicesText.split(',').map(s => s.trim()).filter(Boolean),
-        tags: tagsText.split(',').map(t => t.trim()).filter(Boolean),
+        provinces: provincesText.split(',').map((s: string) => s.trim()).filter(Boolean),
+        sigils: sigilsText.split(',').map((t: string) => t.trim()).filter(Boolean),
         confidence,
-        source: {
+        origin: {
           type: 'manual',
           reference: 'cli',
-          context: `Added via CLI in ${project.name}`,
+          context: `Added via CLI in ${realm.name}`,
         },
       };
 
-      const fact = await db.createFact(factInput);
+      const lore = await db.createLore(loreInput);
       setSuccess(true);
       
       setTimeout(() => {
@@ -158,7 +167,7 @@ export function AddFact({
         exit();
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create fact');
+      setError(err instanceof Error ? err.message : 'Failed to create lore');
       setTimeout(() => setError(null), 3000);
       setIsSubmitting(false);
     }
@@ -192,15 +201,15 @@ export function AddFact({
 
     // Check if we're in a text input field
     const isTextInputField = currentField === 'content' || currentField === 'why' || 
-                           currentField === 'services' || currentField === 'tags';
+                           currentField === 'provinces' || currentField === 'sigils';
 
     if (input === '?' && !isTextInputField) {
       setShowHelp(true);
     } else if (key.tab && !key.shift) {
       // Tab navigation (forward)
       const fields: FormField[] = ['content', 'type', 'why'];
-      if (project?.isMonorepo) fields.push('services');
-      fields.push('tags', 'confidence');
+      if (realm?.isMonorepo) fields.push('provinces');
+      fields.push('sigils', 'confidence');
       
       const currentIndex = fields.indexOf(currentField);
       const nextIndex = (currentIndex + 1) % fields.length;
@@ -208,8 +217,8 @@ export function AddFact({
     } else if (key.tab && key.shift) {
       // Shift-Tab navigation (backward)
       const fields: FormField[] = ['content', 'type', 'why'];
-      if (project?.isMonorepo) fields.push('services');
-      fields.push('tags', 'confidence');
+      if (realm?.isMonorepo) fields.push('provinces');
+      fields.push('sigils', 'confidence');
       
       const currentIndex = fields.indexOf(currentField);
       const prevIndex = currentIndex === 0 ? fields.length - 1 : currentIndex - 1;
@@ -231,77 +240,86 @@ export function AddFact({
   // Handle loading and error states
   if (loading) {
     return (
-      <Box flexDirection="column" alignItems="center" justifyContent="center" height={20}>
-        <Text>Loading project information...</Text>
-      </Box>
+      <AlternativeScreenView>
+        <Box flexDirection="column" alignItems="center" justifyContent="center" height={rows - 1}>
+          <Text>Loading realm information...</Text>
+        </Box>
+      </AlternativeScreenView>
     );
   }
 
   if (success) {
     return (
-      <Box flexDirection="column" alignItems="center" justifyContent="center" height={20}>
-        <Text color="green" bold>✓ Fact created successfully!</Text>
-        <Box marginTop={1}>
-          <Text dimColor>Returning to shell...</Text>
+      <AlternativeScreenView>
+        <Box flexDirection="column" alignItems="center" justifyContent="center" height={rows - 1}>
+          <Text color="green" bold>✓ Lore created successfully!</Text>
+          <Box marginTop={1}>
+            <Text dimColor>Returning to shell...</Text>
+          </Box>
         </Box>
-      </Box>
+      </AlternativeScreenView>
     );
   }
 
   if (showHelp) {
     return (
-      <Box flexDirection="column" height={20} padding={1}>
-        <Text bold underline>Keyboard Shortcuts</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text><Text color="cyan">Tab</Text> - Next field</Text>
-          <Text><Text color="cyan">Shift+Tab</Text> - Previous field</Text>
-          <Text><Text color="cyan">Enter</Text> - Save fact</Text>
-          <Text><Text color="cyan">Esc</Text> - Cancel</Text>
-          <Text><Text color="cyan">←/→</Text> - Adjust confidence (when in confidence field)</Text>
-          <Text><Text color="cyan">?</Text> - Toggle this help</Text>
+      <AlternativeScreenView>
+        <Box flexDirection="column" height={rows - 1} padding={1}>
+          <Text bold underline>Keyboard Shortcuts</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text><Text color="cyan">Tab</Text> - Next field</Text>
+            <Text><Text color="cyan">Shift+Tab</Text> - Previous field</Text>
+            <Text><Text color="cyan">Enter</Text> - Save lore</Text>
+            <Text><Text color="cyan">Esc</Text> - Cancel</Text>
+            <Text><Text color="cyan">←/→</Text> - Adjust confidence (when in confidence field)</Text>
+            <Text><Text color="cyan">?</Text> - Toggle this help</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Press ? or Esc to return</Text>
+          </Box>
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>Press ? or Esc to return</Text>
-        </Box>
-      </Box>
+      </AlternativeScreenView>
     );
   }
 
   // Show duplicate warning if needed
   if (showDuplicateWarning && duplicates.length > 0) {
     return (
-      <Box flexDirection="column" padding={1}>
-        <Text bold color="yellow">⚠ Potential Duplicate Facts Found</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text>The following existing facts are similar to your new fact:</Text>
+      <AlternativeScreenView>
+        <Box flexDirection="column" height={rows - 1} padding={1}>
+          <Text bold color="yellow">⚠ Potential Duplicate Lores Found</Text>
           <Box marginTop={1} flexDirection="column">
-            {duplicates.slice(0, 3).map((dup, i) => (
-              <Box key={i} marginBottom={1}>
-                <Text>• [{Math.round(dup.similarity * 100)}% similar] {dup.content}</Text>
-              </Box>
-            ))}
+            <Text>The following existing lores are similar to your new lore:</Text>
+            <Box marginTop={1} flexDirection="column">
+              {duplicates.slice(0, 3).map((dup, i) => (
+                <Box key={i} marginBottom={1}>
+                  <Text>• [{Math.round(dup.similarity * 100)}% similar] {dup.content}</Text>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+          <Box marginTop={1}>
+            <Text>Do you want to continue adding this lore anyway?</Text>
+            <Text dimColor>Press Y to continue, N to cancel</Text>
           </Box>
         </Box>
-        <Box marginTop={1}>
-          <Text>Do you want to continue adding this fact anyway?</Text>
-          <Text dimColor>Press Y to continue, N to cancel</Text>
-        </Box>
-      </Box>
+      </AlternativeScreenView>
     );
   }
 
   // Main form - single column layout
   return (
-    <Box flexDirection="column" height={20}>
+    <AlternativeScreenView>
+      <Box flexDirection="column" height={rows - 1}>
       {/* Header */}
       <Box height={3} flexDirection="column">
-        <Text bold>Add New Fact</Text>
-        <Text dimColor>{project?.name} - {project?.path}</Text>
+        <Text bold>Add New Lore</Text>
+        <Text dimColor>{realm?.name} - {realm?.path}</Text>
         {error && <Text color="red">⚠ {error}</Text>}
       </Box>
 
       {/* Form fields */}
-      <Box flexDirection="column" height={15} paddingX={1}>
+      <Box flexDirection="column" height={rows - 8} paddingX={1}>
         {/* Content field */}
         <Box flexDirection="column" marginBottom={1}>
           <Text bold color={currentField === 'content' ? 'cyan' : undefined}>
@@ -324,17 +342,17 @@ export function AddFact({
           {currentField === 'type' ? (
             <Box height={8}>
               <SelectInput
-                items={factTypes.map(t => ({
+                items={loreTypes.map(t => ({
                   ...t,
                   label: `${t.label} - ${typeDescriptions[t.value]}`,
                 }))}
                 onSelect={(item) => setType(item.value)}
-                initialIndex={factTypes.findIndex(t => t.value === type)}
+                initialIndex={loreTypes.findIndex(t => t.value === type)}
                 limit={8}
               />
             </Box>
           ) : (
-            <Text>{factTypes.find(t => t.value === type)?.label} - <Text dimColor>{typeDescriptions[type]}</Text></Text>
+            <Text>{loreTypes.find(t => t.value === type)?.label} - <Text dimColor>{typeDescriptions[type]}</Text></Text>
           )}
         </Box>
 
@@ -354,37 +372,37 @@ export function AddFact({
           )}
         </Box>
 
-        {/* Services field (monorepo only) */}
-        {project?.isMonorepo && (
+        {/* Provinces field (monorepo only) */}
+        {realm?.isMonorepo && (
           <Box flexDirection="column" marginBottom={1}>
-            <Text bold color={currentField === 'services' ? 'cyan' : undefined}>
-              Services <Text dimColor>(comma-separated)</Text>
+            <Text bold color={currentField === 'provinces' ? 'cyan' : undefined}>
+              Provinces <Text dimColor>(comma-separated)</Text>
             </Text>
-            {currentField === 'services' ? (
+            {currentField === 'provinces' ? (
               <TextInput
-                value={servicesText}
-                onChange={setServicesText}
-                placeholder={`e.g., ${project.services.slice(0, 3).join(', ')}`}
+                value={provincesText}
+                onChange={setProvincesText}
+                placeholder={`e.g., ${realm.provinces.slice(0, 3).join(', ')}`}
               />
             ) : (
-              <Text color={servicesText ? undefined : 'gray'}>{servicesText || 'All services'}</Text>
+              <Text color={provincesText ? undefined : 'gray'}>{provincesText || 'All provinces'}</Text>
             )}
           </Box>
         )}
 
-        {/* Tags field */}
+        {/* Sigils field */}
         <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={currentField === 'tags' ? 'cyan' : undefined}>
-            Tags <Text dimColor>(comma-separated)</Text>
+          <Text bold color={currentField === 'sigils' ? 'cyan' : undefined}>
+            Sigils <Text dimColor>(comma-separated)</Text>
           </Text>
-          {currentField === 'tags' ? (
+          {currentField === 'sigils' ? (
             <TextInput
-              value={tagsText}
-              onChange={setTagsText}
+              value={sigilsText}
+              onChange={setSigilsText}
               placeholder="e.g., redis, cache, performance"
             />
           ) : (
-            <Text color={tagsText ? undefined : 'gray'}>{tagsText || 'No tags'}</Text>
+            <Text color={sigilsText ? undefined : 'gray'}>{sigilsText || 'No sigils'}</Text>
           )}
         </Box>
 
@@ -408,6 +426,7 @@ export function AddFact({
           Tab: next | Shift+Tab: previous | Enter: save | Esc: cancel | ?: help
         </Text>
       </Box>
-    </Box>
+      </Box>
+    </AlternativeScreenView>
   );
 }
