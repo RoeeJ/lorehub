@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import SelectInput from 'ink-select-input';
+import { Table } from './Table.js';
 import { TruncatedText } from './TruncatedText.js';
 import { useTerminalDimensions } from '../hooks/useTerminalDimensions.js';
 import type { Database } from '../../db/database.js';
@@ -24,6 +24,14 @@ export function SimilarLoresView({ db, lore: lore, onBack }: SimilarLoresViewPro
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
       onBack();
+    } else if (key.upArrow || input === 'k') {
+      if (selectedIndex > 0) {
+        setSelectedIndex(selectedIndex - 1);
+      }
+    } else if (key.downArrow || input === 'j') {
+      if (selectedIndex < similarLores.length - 1) {
+        setSelectedIndex(selectedIndex + 1);
+      }
     } else if (input === 's' && similarLores.length > 0 && !loading) {
       // Navigate to the selected similar lore
       const selectedSimilarLore = similarLores[selectedIndex];
@@ -121,30 +129,36 @@ export function SimilarLoresView({ db, lore: lore, onBack }: SimilarLoresViewPro
   const loresWidth = columns > 120 ? Math.floor(columns * 0.6) : Math.floor(columns * 0.5);
   const detailsWidth = columns - loresWidth - 3;
 
-  const items = similarLores.map((f, index) => {
-    const typeStr = `[${f.type.substring(0, 3).toUpperCase()}]`;
-    const similarityStr = `${(f.similarity * 100).toFixed(0)}%`;
-    const similarCount = similarLoresCounts.get(f.id) || 0;
+  // Helper function to get status letter
+  const getStatusLetter = (status: string): string => {
+    switch (status) {
+      case 'living': return 'L';
+      case 'archived': return 'A';
+      case 'whispered': return 'W';
+      case 'proclaimed': return 'P';
+      default: return '?';
+    }
+  };
+
+  // Prepare table data
+  const tableData = similarLores.map((lore, index) => {
+    const similarCount = similarLoresCounts.get(lore.id) || 0;
+    const isSelected = index === selectedIndex;
+    const similarityPercent = Math.round(lore.similarity * 100);
     
-    // Use fixed-width formatting similar to main view
-    // Fixed width similarity percentage (4 chars)
-    // Fixed width similar count (3 chars + ≈)
-    const similarityFixed = similarityStr.padStart(4);
-    const similarCountStr = similarCount > 0 ? `${similarCount.toString().padStart(3)}≈` : '    ';
-    
-    // Calculate available width
-    // Account for: similarity% (4), space (1), similar count (4), space (1), type (5), space (1)
-    const prefixLength = 4 + 1 + 4 + 1 + 5 + 1;
-    const availableWidth = loresWidth - prefixLength - 4;
-    const contentMaxLength = Math.max(20, availableWidth);
-    
-    const content = f.content.length > contentMaxLength 
-      ? f.content.substring(0, contentMaxLength - 3) + '...' 
-      : f.content;
+    // Calculate max content length
+    const contentMaxLength = Math.max(30, loresWidth - 40);
+    const content = lore.content.length > contentMaxLength 
+      ? lore.content.substring(0, contentMaxLength - 3) + '...' 
+      : lore.content;
     
     return {
-      label: `${similarityFixed} ${similarCountStr} ${typeStr} ${content}`,
-      value: index,
+      '': isSelected ? '→' : ' ',
+      'Match': `${similarityPercent}%`,
+      'Sim': similarCount > 0 ? `${similarCount}≈` : '-',
+      'Type': lore.type.substring(0, 3).toUpperCase(),
+      'S': getStatusLetter(lore.status || 'living'),
+      'Content': content,
     };
   });
 
@@ -171,14 +185,15 @@ export function SimilarLoresView({ db, lore: lore, onBack }: SimilarLoresViewPro
       <Box flexDirection="row" height={contentHeight} overflow="hidden">
         {/* Left pane - similar lores list */}
         <Box flexDirection="column" width={loresWidth} marginRight={2}>
-          <Text bold dimColor>Similar Lores</Text>
-          <Box marginTop={1}>
-            <SelectInput
-              items={items}
-              onHighlight={(item) => setSelectedIndex(item.value)}
-              initialIndex={0}
-              limit={contentHeight - 2}
-            />
+          <Box marginBottom={1}>
+            <Text bold dimColor>Similar Lores</Text>
+          </Box>
+          <Box flexDirection="column">
+            {similarLores.length > 0 ? (
+              <Table data={tableData} />
+            ) : (
+              <Text dimColor>No similar lores found</Text>
+            )}
           </Box>
         </Box>
 
@@ -186,59 +201,46 @@ export function SimilarLoresView({ db, lore: lore, onBack }: SimilarLoresViewPro
         <Box flexDirection="column" width={detailsWidth} overflow="hidden">
           <Text bold dimColor>Details</Text>
           {selectedLore && (
-            <Box flexDirection="column" marginTop={1} height={contentHeight - 2} overflow="hidden">
-              {/* Content section - flexible height */}
-              <Box flexDirection="column" flexGrow={1} overflow="hidden">
-                <TruncatedText 
-                  text={selectedLore.content} 
-                  maxLines={selectedLore.why ? Math.floor((contentHeight - 10) * 0.6) : contentHeight - 10} 
-                  width={detailsWidth} 
-                />
-                {selectedLore.why && (
-                  <Box marginTop={1} flexDirection="column">
-                    <TruncatedText 
-                      text={`Why: ${selectedLore.why}`} 
-                      maxLines={Math.floor((contentHeight - 10) * 0.4)} 
-                      width={detailsWidth} 
-                      dimColor={true}
-                    />
-                  </Box>
-                )}
+            <Box flexDirection="column" marginTop={1}>
+              {/* Metadata section - at top */}
+              <Box flexDirection="column" marginBottom={1}>
+                <Text dimColor>
+                  Similarity: {(selectedLore.similarity * 100).toFixed(1)}%
+                </Text>
+                <Text dimColor>
+                  Realm: {selectedLore.realmName}{selectedLore.isCurrentRealm ? ' •' : ''}
+                </Text>
+                <Text dimColor>
+                  Type: {selectedLore.type} | Status: {selectedLore.status || 'living'} | Confidence: {selectedLore.confidence}%
+                </Text>
+                <Text dimColor>
+                  Created: {selectedLore.createdAt.toLocaleDateString()} {selectedLore.createdAt.toLocaleTimeString()}
+                </Text>
+                <Text dimColor>
+                  Sigils: {selectedLore.sigils.length > 0 ? selectedLore.sigils.join(', ') : 'none'}
+                </Text>
+                <Text dimColor>
+                  Provinces: {selectedLore.provinces.length > 0 ? selectedLore.provinces.join(', ') : 'none'}
+                </Text>
               </Box>
 
-              {/* Metadata section - fixed at bottom */}
-              <Box flexDirection="column" flexShrink={0} marginTop={1}>
-                <TruncatedText 
-                  text={`Similarity: ${(selectedLore.similarity * 100).toFixed(1)}%`}
-                  maxLines={1}
-                  width={detailsWidth}
-                  dimColor={true}
-                />
-                <TruncatedText 
-                  text={`Realm: ${selectedLore.realmName}`}
-                  maxLines={1}
-                  width={detailsWidth}
-                  dimColor={true}
-                />
-                <TruncatedText 
-                  text={`Type: ${selectedLore.type} | Confidence: ${selectedLore.confidence}%`}
-                  maxLines={1}
-                  width={detailsWidth}
-                  dimColor={true}
-                />
-                <TruncatedText 
-                  text={`Created: ${selectedLore.createdAt.toLocaleDateString()}`}
-                  maxLines={1}
-                  width={detailsWidth}
-                  dimColor={true}
-                />
-                {selectedLore.sigils.length > 0 && (
-                  <TruncatedText 
-                    text={`Sigils: ${selectedLore.sigils.join(', ')}`}
-                    maxLines={1}
-                    width={detailsWidth}
-                    dimColor={true}
-                  />
+              {/* Divider */}
+              <Text dimColor>{'─'.repeat(Math.min(detailsWidth - 2, 50))}</Text>
+
+              {/* Content section */}
+              <Box flexDirection="column" marginTop={1}>
+                <Box marginBottom={1}>
+                  <Text wrap="wrap">{selectedLore.content}</Text>
+                </Box>
+                {selectedLore.why && (
+                  <Box marginTop={1} flexDirection="column">
+                    <Box marginBottom={0}>
+                      <Text bold dimColor>Why:</Text>
+                    </Box>
+                    <Box>
+                      <Text wrap="wrap" dimColor>{selectedLore.why}</Text>
+                    </Box>
+                  </Box>
                 )}
               </Box>
             </Box>

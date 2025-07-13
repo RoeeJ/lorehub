@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import SelectInput from 'ink-select-input';
 import { AlternativeScreenView } from './AlternativeScreenView.js';
@@ -61,7 +61,6 @@ export function AddLore({
   initialConfidence = 80,
   onComplete,
 }: AddLoreProps) {
-  const { exit } = useApp();
   const { columns, rows } = useTerminalDimensions();
   const [realm, setRealm] = useState<Realm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +76,7 @@ export function AddLore({
   const [why, setWhy] = useState(initialWhy);
   const [provincesText, setProvincesText] = useState(initialProvinces.join(', '));
   const [sigilsText, setSigilsText] = useState(initialSigils.join(', '));
-  const [confidence, setConfidence] = useState(initialConfidence);
+  const [confidence, setConfidence] = useState(initialConfidence || 90); // Default to 90%
   const [duplicates, setDuplicates] = useState<Array<{ content: string; similarity: number }>>([]);
   const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
@@ -162,10 +161,9 @@ export function AddLore({
       const lore = await db.createLore(loreInput);
       setSuccess(true);
       
-      setTimeout(() => {
-        onComplete?.(true);
-        exit();
-      }, 1500);
+      // Exit immediately after successful creation
+      onComplete?.(true);
+      process.exit(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create lore');
       setTimeout(() => setError(null), 3000);
@@ -206,19 +204,15 @@ export function AddLore({
     if (input === '?' && !isTextInputField) {
       setShowHelp(true);
     } else if (key.tab && !key.shift) {
-      // Tab navigation (forward)
-      const fields: FormField[] = ['content', 'type', 'why'];
-      if (realm?.isMonorepo) fields.push('provinces');
-      fields.push('sigils', 'confidence');
+      // Tab navigation (forward) - simplified for essential fields only
+      const fields: FormField[] = content ? ['content', 'type', 'confidence'] : ['content'];
       
       const currentIndex = fields.indexOf(currentField);
       const nextIndex = (currentIndex + 1) % fields.length;
       setCurrentField(fields[nextIndex] as FormField);
     } else if (key.tab && key.shift) {
-      // Shift-Tab navigation (backward)
-      const fields: FormField[] = ['content', 'type', 'why'];
-      if (realm?.isMonorepo) fields.push('provinces');
-      fields.push('sigils', 'confidence');
+      // Shift-Tab navigation (backward) - simplified for essential fields only
+      const fields: FormField[] = content ? ['content', 'type', 'confidence'] : ['content'];
       
       const currentIndex = fields.indexOf(currentField);
       const prevIndex = currentIndex === 0 ? fields.length - 1 : currentIndex - 1;
@@ -227,7 +221,7 @@ export function AddLore({
       handleSubmit();
     } else if (key.escape) {
       onComplete?.(false);
-      exit();
+      process.exit(0);
     } else if (currentField === 'confidence') {
       if (key.leftArrow && confidence > 0) {
         setConfidence(Math.max(0, confidence - 5));
@@ -237,31 +231,9 @@ export function AddLore({
     }
   });
 
-  // Handle loading and error states
-  if (loading) {
-    return (
-      <AlternativeScreenView>
-        <Box flexDirection="column" alignItems="center" justifyContent="center" height={rows - 1}>
-          <Text>Loading realm information...</Text>
-        </Box>
-      </AlternativeScreenView>
-    );
-  }
+  // Remove the success screen - we exit immediately after creation
 
-  if (success) {
-    return (
-      <AlternativeScreenView>
-        <Box flexDirection="column" alignItems="center" justifyContent="center" height={rows - 1}>
-          <Text color="green" bold>✓ Lore created successfully!</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Returning to shell...</Text>
-          </Box>
-        </Box>
-      </AlternativeScreenView>
-    );
-  }
-
-  if (showHelp) {
+  if (!loading && showHelp) {
     return (
       <AlternativeScreenView>
         <Box flexDirection="column" height={rows - 1} padding={1}>
@@ -283,7 +255,7 @@ export function AddLore({
   }
 
   // Show duplicate warning if needed
-  if (showDuplicateWarning && duplicates.length > 0) {
+  if (!loading && showDuplicateWarning && duplicates.length > 0) {
     return (
       <AlternativeScreenView>
         <Box flexDirection="column" height={rows - 1} padding={1}>
@@ -307,125 +279,92 @@ export function AddLore({
     );
   }
 
-  // Main form - single column layout
+  // Main form - conversational style
   return (
     <AlternativeScreenView>
-      <Box flexDirection="column" height={rows - 1}>
-      {/* Header */}
-      <Box height={3} flexDirection="column">
-        <Text bold>Add New Lore</Text>
-        <Text dimColor>{realm?.name} - {realm?.path}</Text>
-        {error && <Text color="red">⚠ {error}</Text>}
-      </Box>
-
-      {/* Form fields */}
-      <Box flexDirection="column" height={rows - 8} paddingX={1}>
-        {/* Content field */}
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={currentField === 'content' ? 'cyan' : undefined}>
-            Content {!content && <Text dimColor>(required)</Text>}
-          </Text>
-          {currentField === 'content' ? (
-            <TextInput
-              value={content}
-              onChange={setContent}
-              placeholder="e.g., Use Redis for session storage"
-            />
-          ) : (
-            <Text color={content ? undefined : 'gray'}>{content || 'No content yet'}</Text>
-          )}
-        </Box>
-
-        {/* Type field */}
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={currentField === 'type' ? 'cyan' : undefined}>Type</Text>
-          {currentField === 'type' ? (
-            <Box height={8}>
-              <SelectInput
-                items={loreTypes.map(t => ({
-                  ...t,
-                  label: `${t.label} - ${typeDescriptions[t.value]}`,
-                }))}
-                onSelect={(item) => setType(item.value)}
-                initialIndex={loreTypes.findIndex(t => t.value === type)}
-                limit={8}
-              />
-            </Box>
-          ) : (
-            <Text>{loreTypes.find(t => t.value === type)?.label} - <Text dimColor>{typeDescriptions[type]}</Text></Text>
-          )}
-        </Box>
-
-        {/* Why field */}
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={currentField === 'why' ? 'cyan' : undefined}>
-            Why <Text dimColor>(optional)</Text>
-          </Text>
-          {currentField === 'why' ? (
-            <TextInput
-              value={why}
-              onChange={setWhy}
-              placeholder="e.g., Need sub-50ms session lookups"
-            />
-          ) : (
-            <Text color={why ? undefined : 'gray'}>{why || 'No reason provided'}</Text>
-          )}
-        </Box>
-
-        {/* Provinces field (monorepo only) */}
-        {realm?.isMonorepo && (
-          <Box flexDirection="column" marginBottom={1}>
-            <Text bold color={currentField === 'provinces' ? 'cyan' : undefined}>
-              Provinces <Text dimColor>(comma-separated)</Text>
-            </Text>
-            {currentField === 'provinces' ? (
+      <Box flexDirection="column" paddingX={2} paddingY={1}>
+        {/* Show error if realm failed to load */}
+        {error && !realm && (
+          <Box marginBottom={1}>
+            <Text color="red">⚠ {error}</Text>
+          </Box>
+        )}
+        
+        {/* Content prompt - always show */}
+        <Box flexDirection="column">
+          <Text color={currentField === 'content' ? 'cyan' : undefined}>📝 What lore do you wish to record?</Text>
+          <Box marginTop={1} flexDirection="row">
+            <Text color="gray">&gt; </Text>
+            {currentField === 'content' ? (
               <TextInput
-                value={provincesText}
-                onChange={setProvincesText}
-                placeholder={`e.g., ${realm.provinces.slice(0, 3).join(', ')}`}
+                value={content}
+                onChange={setContent}
+                placeholder=""
+                focus={true}
               />
             ) : (
-              <Text color={provincesText ? undefined : 'gray'}>{provincesText || 'All provinces'}</Text>
+              <Text>{content}</Text>
             )}
+          </Box>
+        </Box>
+
+        {/* Show other fields after content is entered */}
+        {content && (
+          <>
+            {/* Type field */}
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={currentField === 'type' ? 'cyan' : undefined}>
+                📂 Type: {loreTypes.find(t => t.value === type)?.label?.toLowerCase()}
+              </Text>
+              {currentField === 'type' && (
+                <Box marginTop={1} marginLeft={2}>
+                  <SelectInput
+                    items={loreTypes.map(t => ({
+                      ...t,
+                      label: t.label.toLowerCase(),
+                    }))}
+                    onSelect={(item) => setType(item.value)}
+                    initialIndex={loreTypes.findIndex(t => t.value === type)}
+                    limit={8}
+                  />
+                </Box>
+              )}
+            </Box>
+
+            {/* Confidence field */}
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={currentField === 'confidence' ? 'cyan' : undefined}>✨ Confidence: {confidence}%</Text>
+              {currentField === 'confidence' && (
+                <Box marginTop={1}>
+                  <Text dimColor>Use ← → arrows to adjust</Text>
+                </Box>
+              )}
+            </Box>
+          </>
+        )}
+
+        {/* Success message */}
+        {isSubmitting && (
+          <Box marginTop={2}>
+            <Text color="green">✓ Lore recorded successfully!</Text>
           </Box>
         )}
 
-        {/* Sigils field */}
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={currentField === 'sigils' ? 'cyan' : undefined}>
-            Sigils <Text dimColor>(comma-separated)</Text>
-          </Text>
-          {currentField === 'sigils' ? (
-            <TextInput
-              value={sigilsText}
-              onChange={setSigilsText}
-              placeholder="e.g., redis, cache, performance"
-            />
-          ) : (
-            <Text color={sigilsText ? undefined : 'gray'}>{sigilsText || 'No sigils'}</Text>
-          )}
-        </Box>
-
-        {/* Confidence field */}
-        <Box flexDirection="column">
-          <Text bold color={currentField === 'confidence' ? 'cyan' : undefined}>
-            Confidence: {confidence}%
-          </Text>
-          <Box>
-            <Text>{'[' + '█'.repeat(Math.floor(confidence / 5)) + '░'.repeat(20 - Math.floor(confidence / 5)) + ']'}</Text>
+        {/* Error message */}
+        {error && (
+          <Box marginTop={1}>
+            <Text color="red">⚠ {error}</Text>
           </Box>
-          {currentField === 'confidence' && (
-            <Text dimColor>Use ← → to adjust</Text>
-          )}
-        </Box>
-      </Box>
+        )}
 
-      {/* Footer */}
-      <Box height={2}>
-        <Text dimColor>
-          Tab: next | Shift+Tab: previous | Enter: save | Esc: cancel | ?: help
-        </Text>
-      </Box>
+        {/* Help text */}
+        <Box marginTop={2}>
+          <Text dimColor>
+            {currentField === 'content' ? 'Press Enter to continue' : 
+             currentField === 'confidence' ? 'Press Enter to save, Tab to continue' :
+             'Press Tab to continue, Enter to save'}
+          </Text>
+        </Box>
       </Box>
     </AlternativeScreenView>
   );

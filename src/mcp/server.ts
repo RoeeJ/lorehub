@@ -735,7 +735,7 @@ export class LoreHubServer {
     }
 
     // Update the lore
-    const updatedLore = this.db.updateLore(params.lore_id, {
+    const updatedLore = await this.db.updateLore(params.lore_id, {
       content: params.content,
       why: params.why,
       type: params.type as LoreType | undefined,
@@ -918,7 +918,7 @@ export class LoreHubServer {
     }
     
     // Create the relation
-    const relation = this.db.createRelation({
+    const relation = await this.db.createRelation({
       fromLoreId: params.from_lore_id,
       toLoreId: params.to_lore_id,
       type: params.type as RelationType,
@@ -969,7 +969,7 @@ export class LoreHubServer {
     }
     
     // Delete the relation
-    this.db.deleteRelation(params.from_lore_id, params.to_lore_id, params.type);
+    await this.db.deleteRelation(params.from_lore_id, params.to_lore_id, params.type);
     
     return {
       content: [

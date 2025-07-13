@@ -87,6 +87,83 @@ export const loreRelations = sqliteTable(
   ]
 );
 
+// Workspaces table
+export const workspaces = sqliteTable(
+  'workspaces',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull().unique(),
+    syncEnabled: integer('sync_enabled', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    syncRepo: text('sync_repo'), // Git remote URL
+    syncBranch: text('sync_branch').default('main'),
+    autoSync: integer('auto_sync', { mode: 'boolean' })
+      .notNull()
+      .default(true),
+    syncInterval: integer('sync_interval').default(300), // seconds
+    filters: text('filters'), // JSON object with sync filters
+    isDefault: integer('is_default', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex('workspaces_name_unique').on(table.name),
+  })
+);
+
+// Update realms table to add workspace association
+export const realmWorkspaces = sqliteTable(
+  'realm_workspaces',
+  {
+    realmId: text('realm_id')
+      .notNull()
+      .references(() => realms.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.realmId, table.workspaceId] }),
+    realmIdx: index('idx_realm_workspaces_realm').on(table.realmId),
+    workspaceIdx: index('idx_realm_workspaces_workspace').on(table.workspaceId),
+  })
+);
+
+// Sync state tracking
+export const syncState = sqliteTable(
+  'sync_state',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id').notNull(),
+    lastSyncAt: text('last_sync_at'),
+    lastSyncCommit: text('last_sync_commit'),
+    vectorClock: text('vector_clock'), // JSON object
+    pendingChanges: integer('pending_changes').notNull().default(0),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.workspaceId, table.deviceId] }),
+    workspaceIdx: index('idx_sync_state_workspace').on(table.workspaceId),
+  })
+);
+
 // Type exports for inference
 export type Realm = typeof realms.$inferSelect;
 export type NewRealm = typeof realms.$inferInsert;
@@ -94,8 +171,17 @@ export type Lore = typeof lores.$inferSelect;
 export type NewLore = typeof lores.$inferInsert;
 export type LoreRelation = typeof loreRelations.$inferSelect;
 export type NewLoreRelation = typeof loreRelations.$inferInsert;
+export type Workspace = typeof workspaces.$inferSelect;
+export type NewWorkspace = typeof workspaces.$inferInsert;
+export type RealmWorkspace = typeof realmWorkspaces.$inferSelect;
+export type NewRealmWorkspace = typeof realmWorkspaces.$inferInsert;
+export type SyncState = typeof syncState.$inferSelect;
+export type NewSyncState = typeof syncState.$inferInsert;
 
 // Export schema types for Drizzle
 export type DbRealm = Realm;
 export type DbLore = Lore;
 export type DbLoreRelation = LoreRelation;
+export type DbWorkspace = Workspace;
+export type DbRealmWorkspace = RealmWorkspace;
+export type DbSyncState = SyncState;

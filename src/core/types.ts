@@ -172,3 +172,67 @@ export const validateRealmSafe = (realm: unknown) => {
   return RealmSchema.safeParse(realm);
 };
 
+// Workspace types
+export const WorkspaceSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(50),
+  syncEnabled: z.boolean().default(false),
+  syncRepo: z.string().url().optional(),
+  syncBranch: z.string().default('main'),
+  autoSync: z.boolean().default(true),
+  syncInterval: z.number().min(60).max(3600).default(300), // 1 min to 1 hour
+  filters: z.object({
+    types: z.array(LoreTypeSchema).optional(),
+    minConfidence: z.number().min(0).max(100).optional(),
+    includeSigils: z.array(z.string()).optional(),
+    excludeSigils: z.array(z.string()).optional(),
+    includeProvinces: z.array(z.string()).optional(),
+    excludeProvinces: z.array(z.string()).optional(),
+  }).optional(),
+  isDefault: z.boolean().default(false),
+  createdAt: z.date().default(() => new Date()),
+  updatedAt: z.date().default(() => new Date()),
+});
+
+export const SyncStateSchema = z.object({
+  workspaceId: z.string(),
+  deviceId: z.string(),
+  lastSyncAt: z.date().optional(),
+  lastSyncCommit: z.string().optional(),
+  vectorClock: z.record(z.string(), z.number()).optional(),
+  pendingChanges: z.number().default(0),
+  createdAt: z.date().default(() => new Date()),
+  updatedAt: z.date().default(() => new Date()),
+});
+
+// Type exports
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+export type SyncState = z.infer<typeof SyncStateSchema>;
+export type WorkspaceFilters = z.infer<typeof WorkspaceSchema>['filters'];
+
+// Input types for creation
+export type CreateWorkspaceInput = {
+  name: string;
+  syncEnabled?: boolean;
+  syncRepo?: string;
+  syncBranch?: string;
+  autoSync?: boolean;
+  syncInterval?: number;
+  filters?: WorkspaceFilters;
+  isDefault?: boolean;
+  id?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+export type UpdateWorkspaceInput = Partial<Omit<Workspace, 'id' | 'createdAt'>>;
+
+// Validation helpers
+export const validateWorkspace = (workspace: unknown): Workspace => {
+  return WorkspaceSchema.parse(workspace);
+};
+
+export const validateWorkspaceSafe = (workspace: unknown) => {
+  return WorkspaceSchema.safeParse(workspace);
+};
+

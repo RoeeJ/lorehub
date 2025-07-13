@@ -6,7 +6,20 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from '../utils/uuid.js';
-import { realms, lores, loreRelations, type Realm as DbRealm, type Lore as DbLore, type LoreRelation as DbLoreRelation } from './schema.js';
+import { 
+  realms, 
+  lores, 
+  loreRelations, 
+  workspaces,
+  realmWorkspaces,
+  syncState,
+  type Realm as DbRealm, 
+  type Lore as DbLore, 
+  type LoreRelation as DbLoreRelation,
+  type Workspace as DbWorkspace,
+  type RealmWorkspace as DbRealmWorkspace,
+  type SyncState as DbSyncState
+} from './schema.js';
 import type { 
   Lore,
   LoreType,
@@ -18,11 +31,16 @@ import type {
   CreateRelationInput,
   Relation,
   LoreRelation,
-  RelationType
+  RelationType,
+  Workspace,
+  CreateWorkspaceInput,
+  UpdateWorkspaceInput,
+  SyncState
 } from '../core/types.js';
 import * as sqliteVec from 'sqlite-vec';
 import { EmbeddingService } from '../core/embeddings.js';
 import { getSearchCache } from '../core/search-cache.js';
+import { ChangeTracker } from '../sync/change-tracker.js';
 
 // Raw SQL result type (snake_case fields)
 interface RawLoreRow {
@@ -44,6 +62,7 @@ export class Database {
   sqlite: BetterSqlite3.Database;  // Made public for migrate-embeddings command
   private db: ReturnType<typeof drizzle>;
   private embeddingService: EmbeddingService;
+  private changeTracker: ChangeTracker;
 
   constructor(dbPath: string) {
     // Ensure directory exists
@@ -66,6 +85,10 @@ export class Database {
     
     // Initialize embedding service
     this.embeddingService = EmbeddingService.getInstance();
+    
+    // Initialize change tracker
+    this.changeTracker = ChangeTracker.getInstance();
+    this.changeTracker.initialize(this);
     
     // Run Drizzle migrations
     this.runMigrations();
@@ -246,6 +269,10 @@ export class Database {
     const results = this.db.select().from(realms).orderBy(desc(realms.lastSeen)).all();
     return results.map(r => this.dbRealmToRealm(r));
   }
+
+  getCurrentRealm(): Realm | null {
+    return this.findRealmByPath(process.cwd());
+  }
   
 
   // Lore methods (was Lore)
@@ -278,7 +305,12 @@ export class Database {
       // Don't fail lore creation if embedding generation fails
     }
     
-    return this.findLore(id)!;
+    const createdLore = this.findLore(id)!;
+    
+    // Track the change
+    await this.changeTracker.recordLoreChange('create', id, input.realmId, createdLore);
+    
+    return createdLore;
   }
 
   findLore(id: string): Lore | null {
@@ -286,7 +318,10 @@ export class Database {
     return result ? this.dbLoreToLore(result) : null;
   }
 
-  updateLore(id: string, input: UpdateLoreInput): Lore | null {
+  async updateLore(id: string, input: UpdateLoreInput): Promise<Lore | null> {
+    const existingLore = this.findLore(id);
+    if (!existingLore) return null;
+    
     const updates: any = {
       updatedAt: new Date().toISOString(),
     };
@@ -302,14 +337,30 @@ export class Database {
 
     this.db.update(lores).set(updates).where(eq(lores.id, id)).run();
     
-    return this.findLore(id);
+    const updatedLore = this.findLore(id);
+    
+    // Track the change
+    if (updatedLore) {
+      await this.changeTracker.recordLoreChange('update', id, existingLore.realmId, updatedLore);
+    }
+    
+    return updatedLore;
   }
 
-  deleteLore(id: string): void {
+  async deleteLore(id: string): Promise<void> {
+    const lore = this.findLore(id);
+    if (!lore) return;
+    
     this.db.delete(lores).where(eq(lores.id, id)).run();
+    
+    // Track the change
+    await this.changeTracker.recordLoreChange('delete', id, lore.realmId, { id });
   }
 
-  softDeleteLore(id: string): void {
+  async softDeleteLore(id: string): Promise<void> {
+    const lore = this.findLore(id);
+    if (!lore) return;
+    
     this.db.update(lores)
       .set({ 
         status: 'archived',
@@ -317,6 +368,9 @@ export class Database {
       })
       .where(eq(lores.id, id))
       .run();
+      
+    // Track the change
+    await this.changeTracker.recordLoreChange('archive', id, lore.realmId, { id, status: 'archived' });
   }
 
   restoreLore(id: string): void {
@@ -633,7 +687,7 @@ export class Database {
   }
 
   // Relation methods
-  createRelation(input: CreateRelationInput): Relation {
+  async createRelation(input: CreateRelationInput): Promise<Relation> {
     const relation = {
       fromLoreId: input.fromLoreId,
       toLoreId: input.toLoreId,
@@ -644,6 +698,19 @@ export class Database {
     };
 
     this.db.insert(loreRelations).values(relation).run();
+    
+    // Get realm from the fromLore
+    const fromLore = this.findLore(input.fromLoreId);
+    if (fromLore) {
+      await this.changeTracker.recordRelationChange(
+        'create',
+        input.fromLoreId,
+        input.toLoreId,
+        input.type,
+        fromLore.realmId,
+        relation
+      );
+    }
     
     return this.dbRelationToRelation(relation as DbLoreRelation);
   }
@@ -660,7 +727,10 @@ export class Database {
     return results.map(r => this.dbRelationToRelation(r));
   }
 
-  deleteRelation(fromLoreId: string, toLoreId: string, type: string): void {
+  async deleteRelation(fromLoreId: string, toLoreId: string, type: string): Promise<void> {
+    // Get realm from the fromLore
+    const fromLore = this.findLore(fromLoreId);
+    
     this.db.delete(loreRelations)
       .where(and(
         eq(loreRelations.fromLoreId, fromLoreId),
@@ -668,6 +738,16 @@ export class Database {
         eq(loreRelations.type, type)
       ))
       .run();
+      
+    if (fromLore) {
+      await this.changeTracker.recordRelationChange(
+        'delete',
+        fromLoreId,
+        toLoreId,
+        type,
+        fromLore.realmId
+      );
+    }
   }
 
   // Export/Import methods
@@ -705,15 +785,18 @@ export class Database {
     };
   }
 
-  importData(
+  async importData(
     data: {
       realms: CreateRealmInput[];
       lores: CreateLoreInput[];
       relations: CreateRelationInput[];
     },
     mode: 'replace' | 'merge' = 'replace'
-  ): void {
-    this.transaction(() => {
+  ): Promise<void> {
+    // Disable change tracking during import
+    this.changeTracker.disable();
+    
+    try {
       if (mode === 'replace') {
         // Clear existing data
         this.db.delete(loreRelations).run();
@@ -736,7 +819,7 @@ export class Database {
           const existing = this.findLore(lore.id!);
           if (existing) continue;
         }
-        this.createLore(lore);
+        await this.createLore(lore);
       }
       
       // Import relations
@@ -753,9 +836,12 @@ export class Database {
             .get();
           if (existing) continue;
         }
-        this.createRelation(relation);
+        await this.createRelation(relation);
       }
-    });
+    } finally {
+      // Re-enable change tracking
+      this.changeTracker.enable();
+    }
   }
 
   // Helper methods to convert between DB and domain types
@@ -800,6 +886,218 @@ export class Database {
       strength: dbRelation.strength,
       metadata: dbRelation.metadata ? JSON.parse(dbRelation.metadata) : undefined,
       createdAt: new Date(dbRelation.createdAt),
+    };
+  }
+
+  // Workspace methods
+  createWorkspace(input: CreateWorkspaceInput): Workspace {
+    const id = input.id || uuidv4();
+    const now = new Date();
+    
+    // Check if name already exists
+    const existing = this.db.select().from(workspaces)
+      .where(eq(workspaces.name, input.name))
+      .get();
+    
+    if (existing) {
+      throw new Error(`Workspace with name '${input.name}' already exists`);
+    }
+    
+    // If this is the first workspace or isDefault is true, set it as default
+    const workspaceCount = this.db.select({ count: sql<number>`count(*)` })
+      .from(workspaces)
+      .get()?.count || 0;
+    
+    const shouldBeDefault = input.isDefault || workspaceCount === 0;
+    
+    // If setting as default, unset any existing default
+    if (shouldBeDefault) {
+      this.db.update(workspaces)
+        .set({ isDefault: false })
+        .where(eq(workspaces.isDefault, true))
+        .run();
+    }
+    
+    const workspace = {
+      id,
+      name: input.name,
+      syncEnabled: input.syncEnabled || false,
+      syncRepo: input.syncRepo || null,
+      syncBranch: input.syncBranch || 'main',
+      autoSync: input.autoSync ?? true,
+      syncInterval: input.syncInterval || 300,
+      filters: input.filters ? JSON.stringify(input.filters) : null,
+      isDefault: shouldBeDefault,
+      createdAt: (input.createdAt || now).toISOString(),
+      updatedAt: (input.updatedAt || now).toISOString(),
+    };
+
+    this.db.insert(workspaces).values(workspace).run();
+    
+    return this.findWorkspace(id)!;
+  }
+
+  findWorkspace(id: string): Workspace | null {
+    const result = this.db.select().from(workspaces).where(eq(workspaces.id, id)).get();
+    return result ? this.dbWorkspaceToWorkspace(result) : null;
+  }
+
+  findWorkspaceByName(name: string): Workspace | null {
+    const result = this.db.select().from(workspaces).where(eq(workspaces.name, name)).get();
+    return result ? this.dbWorkspaceToWorkspace(result) : null;
+  }
+
+  getDefaultWorkspace(): Workspace | null {
+    const result = this.db.select().from(workspaces).where(eq(workspaces.isDefault, true)).get();
+    return result ? this.dbWorkspaceToWorkspace(result) : null;
+  }
+
+  listWorkspaces(): Workspace[] {
+    return this.db.select().from(workspaces)
+      .orderBy(desc(workspaces.isDefault), workspaces.name)
+      .all()
+      .map(w => this.dbWorkspaceToWorkspace(w));
+  }
+
+  updateWorkspace(id: string, input: UpdateWorkspaceInput): Workspace | null {
+    const updates: any = {
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (input.name !== undefined) updates.name = input.name;
+    if (input.syncEnabled !== undefined) updates.syncEnabled = input.syncEnabled;
+    if (input.syncRepo !== undefined) updates.syncRepo = input.syncRepo;
+    if (input.syncBranch !== undefined) updates.syncBranch = input.syncBranch;
+    if (input.autoSync !== undefined) updates.autoSync = input.autoSync;
+    if (input.syncInterval !== undefined) updates.syncInterval = input.syncInterval;
+    if (input.filters !== undefined) updates.filters = JSON.stringify(input.filters);
+    if (input.isDefault !== undefined) {
+      updates.isDefault = input.isDefault;
+      // If setting as default, unset any existing default
+      if (input.isDefault) {
+        this.db.update(workspaces)
+          .set({ isDefault: false })
+          .where(and(eq(workspaces.isDefault, true), sql`id != ${id}`))
+          .run();
+      }
+    }
+
+    this.db.update(workspaces).set(updates).where(eq(workspaces.id, id)).run();
+    
+    return this.findWorkspace(id);
+  }
+
+  deleteWorkspace(id: string): void {
+    // Check if it's the default workspace
+    const workspace = this.findWorkspace(id);
+    if (!workspace) {
+      throw new Error(`Workspace ${id} not found`);
+    }
+    
+    if (workspace.isDefault) {
+      // Set another workspace as default if exists
+      const otherWorkspace = this.db.select().from(workspaces)
+        .where(sql`id != ${id}`)
+        .get();
+      
+      if (otherWorkspace) {
+        this.db.update(workspaces)
+          .set({ isDefault: true })
+          .where(eq(workspaces.id, otherWorkspace.id))
+          .run();
+      }
+    }
+    
+    this.db.delete(workspaces).where(eq(workspaces.id, id)).run();
+  }
+
+  // Realm-Workspace associations
+  linkRealmToWorkspace(realmId: string, workspaceId: string): void {
+    // Verify both exist
+    if (!this.findRealm(realmId)) {
+      throw new Error(`Realm ${realmId} not found`);
+    }
+    if (!this.findWorkspace(workspaceId)) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+    
+    // Check if already linked
+    const existing = this.db.select().from(realmWorkspaces)
+      .where(and(
+        eq(realmWorkspaces.realmId, realmId),
+        eq(realmWorkspaces.workspaceId, workspaceId)
+      ))
+      .get();
+    
+    if (existing) {
+      return; // Already linked
+    }
+    
+    this.db.insert(realmWorkspaces).values({
+      realmId,
+      workspaceId,
+      createdAt: new Date().toISOString(),
+    }).run();
+  }
+
+  unlinkRealmFromWorkspace(realmId: string, workspaceId: string): void {
+    this.db.delete(realmWorkspaces)
+      .where(and(
+        eq(realmWorkspaces.realmId, realmId),
+        eq(realmWorkspaces.workspaceId, workspaceId)
+      ))
+      .run();
+  }
+
+  getRealmWorkspaces(realmId: string): Workspace[] {
+    const results = this.db.select({ workspace: workspaces })
+      .from(realmWorkspaces)
+      .innerJoin(workspaces, eq(realmWorkspaces.workspaceId, workspaces.id))
+      .where(eq(realmWorkspaces.realmId, realmId))
+      .all();
+    
+    return results.map(r => this.dbWorkspaceToWorkspace(r.workspace));
+  }
+
+  getWorkspaceRealms(workspaceId: string): Realm[] {
+    const results = this.db.select({ realm: realms })
+      .from(realmWorkspaces)
+      .innerJoin(realms, eq(realmWorkspaces.realmId, realms.id))
+      .where(eq(realmWorkspaces.workspaceId, workspaceId))
+      .all();
+    
+    return results.map(r => this.dbRealmToRealm(r.realm));
+  }
+
+  // Helper method to get or create default workspace
+  ensureDefaultWorkspace(): Workspace {
+    let defaultWorkspace = this.getDefaultWorkspace();
+    
+    if (!defaultWorkspace) {
+      // Create a default workspace
+      defaultWorkspace = this.createWorkspace({
+        name: 'main',
+        isDefault: true,
+        syncEnabled: false,
+      });
+    }
+    
+    return defaultWorkspace;
+  }
+
+  private dbWorkspaceToWorkspace(dbWorkspace: DbWorkspace): Workspace {
+    return {
+      id: dbWorkspace.id,
+      name: dbWorkspace.name,
+      syncEnabled: dbWorkspace.syncEnabled,
+      syncRepo: dbWorkspace.syncRepo || undefined,
+      syncBranch: dbWorkspace.syncBranch || 'main',
+      autoSync: dbWorkspace.autoSync,
+      syncInterval: dbWorkspace.syncInterval || 300,
+      filters: dbWorkspace.filters ? JSON.parse(dbWorkspace.filters) : undefined,
+      isDefault: dbWorkspace.isDefault,
+      createdAt: new Date(dbWorkspace.createdAt),
+      updatedAt: new Date(dbWorkspace.updatedAt),
     };
   }
 }

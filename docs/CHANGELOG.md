@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-07-12
+
+### Changed
+- Redesigned add command UI with conversational style
+  - New emoji-based prompts (📝, 📂, ✨)
+  - Active field highlighting in cyan
+  - Reduced vertical spacing for better information density
+  - Immediate exit after successful creation
+- Minimized vertical space in browse interface
+  - Removed empty rows between header and data
+  - More compact layout for better information density
+
+### Added
+- Distance column in search results for semantic/hybrid modes
+  - Shows L2 distance metric for semantic similarity
+  - Helps understand how closely results match the query
+
+### Fixed
+- Semantic search not working in interactive browse mode
+  - Now properly performs semantic search when in semantic mode
+  - Correctly filters results based on similarity threshold
+- Hybrid search accumulation issue
+  - Fixed bug where results were overwritten instead of combined
+  - Now properly merges literal and semantic results
+- Add command blank screen issue
+  - Form now renders immediately instead of waiting for user input
+  - Fixed TextInput initialization problem
+- Exit behavior in add command
+  - Now properly exits using process.exit instead of Ink's exit function
+  - Ensures clean terminal state after adding lore
+
 ## [0.2.1] - 2025-07-09
 
 ### Changed

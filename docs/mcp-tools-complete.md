@@ -37,11 +37,11 @@ When creating a fact for a non-existent project, the system automatically:
 
 ### Relation Types
 Supported relationship types:
-- `supersedes`: One fact replaces another
-- `contradicts`: Facts are in conflict
-- `supports`: Facts reinforce each other
-- `depends_on`: One fact requires another
-- `relates_to`: General relationship
+- `succeeds`: One lore supersedes/replaces another
+- `challenges`: Lores are in conflict/contradiction
+- `supports`: Lores reinforce each other
+- `depends_on`: One lore requires another
+- `bound_to`: General relationship between lores
 
 ### Project Statistics
 The `get_project_stats` tool provides:

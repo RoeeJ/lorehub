@@ -12,6 +12,8 @@ import { renderExport } from './commands/export.js';
 import { renderImport } from './commands/import.js';
 import { migrateEmbeddingsCommand } from './commands/migrate-embeddings.js';
 import { configCommand } from './commands/config.js';
+import workspaceCommand from './commands/workspace.js';
+import syncCommand from './commands/sync.js';
 import { EmbeddingService } from '../core/embeddings.js';
 import { ConfigManager } from '../core/config.js';
 
@@ -29,7 +31,21 @@ export function createCLI(): Command {
   program
     .name('lh')
     .description('LoreHub - Capture and query your realm\'s development knowledge')
-    .version(packageJson.version);
+    .version(packageJson.version)
+    .addHelpText('after', `
+Grid View Indicators:
+  • = Current realm    L = Living (active)
+  ≈ = Similar count    W = Whispered (draft)
+  Dist = Semantic distance (0.00 = exact match, higher = less similar)
+                       P = Proclaimed (verified)
+                       A = Archived
+
+Lore Types:
+  DEC = Decree (rules)      REQ = Requirement
+  ASS = Assumption          RIS = Risk
+  CON = Constraint          LES = Lesson
+                            QUE = Quest
+`);
 
   // Add command
   program
@@ -244,6 +260,12 @@ export function createCLI(): Command {
 
   // Config command
   program.addCommand(configCommand);
+
+  // Workspace command
+  program.addCommand(workspaceCommand);
+
+  // Sync command
+  program.addCommand(syncCommand);
 
   return program;
 }

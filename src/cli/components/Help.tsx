@@ -26,6 +26,7 @@ export function Help({ context }: HelpProps) {
           <Text><Text color="cyan">/</Text> - Filter results (vim-style search)</Text>
           <Text><Text color="cyan">d</Text> - Delete selected lore (soft delete)</Text>
           <Text><Text color="cyan">s</Text> - Show similar lores</Text>
+          <Text><Text color="cyan">m</Text> - Switch search mode (literal/semantic/hybrid)</Text>
           <Text><Text color="cyan">Enter</Text> - Select item</Text>
         </Box>
       )}
@@ -52,11 +53,20 @@ export function Help({ context }: HelpProps) {
         </Box>
       )}
 
+      {/* Column Legend for list view */}
+      {(context === 'list' || context === 'search') && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold color="yellow">Column Legend</Text>
+          <Text><Text color="cyan">R</Text> - Realm indicator (• = current realm)</Text>
+          <Text><Text color="cyan">Sim</Text> - Similar lores count (≈ = approximately)</Text>
+          <Text><Text color="cyan">Type</Text> - Lore type (DEC/ASS/CON/REQ/RIS/LES/QUE/OTH)</Text>
+          <Text><Text color="cyan">S</Text> - Status (L=Living, W=Whispered, P=Proclaimed, A=Archived)</Text>
+        </Box>
+      )}
+
       {/* Tips */}
       <Box marginTop={1} flexDirection="column">
         <Text bold color="yellow">Tips</Text>
-        {context === 'list' && <Text>• Current realm lores are marked with ⭐</Text>}
-        {context === 'list' && <Text>• Number in parentheses (n≈) shows similar lores count</Text>}
         {context === 'search' && <Text>• Use wildcards: * (any chars) or ? (single char)</Text>}
         {context === 'add' && <Text>• All fields except content are optional</Text>}
         <Text>• Lores are stored globally across all realms</Text>
